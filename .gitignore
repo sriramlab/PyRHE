@@ -2,3 +2,8 @@
 
 geno/
 simulated_geno/
+data/
+
+__pycache__/
+
+*.txt
