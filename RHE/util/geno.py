@@ -37,3 +37,43 @@ def impute_geno(X):
     X_imp = (X_imp-np.mean(X_imp, axis=0))/np.std(X_imp, axis=0)
 
     return X_imp
+
+
+def compute_XXz(bin, all_zb, mailman):
+    # TODO: mailman == True
+    num_snp = bin.index
+    gen = bin.gen
+
+    res = gen @ all_zb
+    Nz = np.shape(all_zb)[1]
+
+    means = np.mean(gen, axis=1)
+
+    # stds = np.std(gen, axis=1)
+    stds = 1 / np.sqrt(means * (1 - 0.5 * means)) # a sample’s value is a binomial random variable with n = 2
+
+    zb_sum = np.sum(all_zb, axis=0)
+
+    zb_sum = np.array(zb_sum).reshape(-1, 1)
+
+    for j in range(num_snp):
+        for k in range(Nz):
+            res[j, k] = res[j, k] * stds[j]
+
+    inter = np.array(means * stds).reshape(-1, 1)
+    resid =  inter @ zb_sum.T
+    inter_zb = res - resid
+
+    for k in range(Nz):
+        for j in range(num_snp):
+            inter_zb[j, k] = inter_zb[j, k] * stds[j]
+
+    new_zb = inter_zb.T
+    new_res = new_zb @ gen
+
+    
+    new_resid = new_zb @ np.array(means).reshape(-1, 1)
+    new_resid = new_resid * np.ones((1, np.shape(gen)[1]))
+
+    temp = new_res - new_resid
+    return temp.T
