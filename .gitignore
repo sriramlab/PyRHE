@@ -1,7 +1,5 @@
 .DS_Store
 
-geno/
-simulated_geno/
 data/
 
 __pycache__/
