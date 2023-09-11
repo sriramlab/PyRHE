@@ -1,5 +1,5 @@
+import scipy
 import numpy as np
-
 
 def _simulate_geno_from_random(p_j):
     rval = np.random.random()
@@ -13,7 +13,7 @@ def _simulate_geno_from_random(p_j):
         return 2
     
 
-def impute_geno(X):
+def impute_geno(X, standardize: bool = True):
     N = X.shape[0]
     M = X.shape[1]
     X_imp = X.copy()
@@ -32,9 +32,10 @@ def impute_geno(X):
         for j in range(N):
             if np.isnan(X[j,m]):
                 X_imp[j, m] = _simulate_geno_from_random(observed_sum)
-                
-    # standardize
-    X_imp = (X_imp-np.mean(X_imp, axis=0))/np.std(X_imp, axis=0)
+
+    if standardize:      
+        # standardize
+        X_imp = (X_imp-np.mean(X_imp, axis=0))/np.std(X_imp, axis=0)
 
     return X_imp
 
@@ -77,3 +78,21 @@ def compute_XXz(bin, all_zb, mailman):
 
     temp = new_res - new_resid
     return temp.T
+
+
+def solve_linear_equation(X, y):
+        '''
+        Solve least square
+        '''
+        sigma = np.linalg.lstsq(X, y, rcond=None)[0]
+        return sigma
+
+
+def solve_linear_qr(X, y):
+        '''
+        Solve least square using QR decomposition
+        '''
+        Q, R = scipy.linalg.qr(X)
+        sigma = scipy.linalg.solve_triangular(R, np.dot(Q.T, y))
+        return sigma
+
