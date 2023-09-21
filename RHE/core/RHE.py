@@ -25,13 +25,17 @@ class RHE:
         num_jack: int = 1,
         num_random_vec: int = 10,
         standardize: bool = False,
+        verbose: bool = True,
+        seed: int = 0
     ):
         """
         Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
         """
+        np.random.seed(seed)
         self.num_bin= num_bin
         self.num_jack = num_jack
         self.num_random_vec = num_random_vec
+        self.verbose = verbose
 
         if annot_file is None:
             self.num_bin = num_bin
@@ -79,20 +83,22 @@ class RHE:
 
         self.num_bin, self.annot_matrix = read_annot(annot_file, self.num_jack)
 
-        self.U = np.zeros((self.num_bin + 1, self.num_random_vec, self.num_jack + 1)) 
-        self.V = np.zeros((self.num_bin + 1, self.num_jack + 1))
-        self.M = np.zeros((self.num_bin, self.num_jack + 1)) # number of geno in each bin in each jackknife subsample 
+        self.U = {}
+        self.V = {}
+        self.M = np.zeros((self.num_jack + 1, self.num_bin)) # number of geno in each bin in each jackknife subsample 
                                                              # last dim is total
 
-        # assert self.annot_matrix[0] == self.num_snp
-        # assert self.annot_matrix[1] == self.num_bin
-        # assert self.pheno[0] == self.num_indv
-        
+        self.M = np.zeros((self.num_jack + 1, self.num_bin))
     
     def simulate_pheno(self, sigma_list: List):
         '''
         Simulate phenotype y from X and sigma_list
         '''
+
+        print(self.num_bin)
+        if len(sigma_list) != self.num_bin:
+            
+            raise ValueError("Number of elements in sigma list should be equal to number of bins")
 
         if len(sigma_list) == 1:
                 sigma = sigma_list[0]
@@ -167,39 +173,46 @@ class RHE:
 
     def pre_compute(self):
         """
-        Compute the U tensor and the V matrix
+        Compute U and V 
         """
-
         random_vecs = [np.random.rand(self.num_indv, 1) for _ in range(self.num_random_vec)]
 
-        Z = np.zeros((self.num_bin, self.num_jack, self.num_random_vec)) 
-
-        H = np.zeros((self.num_bin, self.num_jack))
-        
+        Z = {}
+        H = {}        
         for j in range(self.num_jack):
             X_j = self._get_jacknife_subsample(self.geno, j)
             all_gen = self.partition_bins(X_j)
+
+            if self.verbose:
+                print("Partitioned gen:")
+                for gen in all_gen:
+                    print(gen.gen)
+                    print(gen.num_snp)
+                    
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
                 for b, random_vec in enumerate(random_vecs):
-                    thing = X_kj @ X_kj.T @ random_vec
-                    print(thing.shape)
-                    Z[k][j][b] = X_kj @ X_kj.T @ random_vec
+                    Z[(k, j, b)] = X_kj @ X_kj.T @ random_vec
             
                 v = X_kj.T @ self.pheno
-                H[k][j] = v.T @ v
+                H[(k, j)] = v.T @ v
         
-
         for k in range(self.num_bin):
-            for b, random_vec in random_vecs:
-                for j in range(self.num_jack):
-                    self.U[k][b][-1] += Z[k][b][j]
-                    self.V[k][-1] += H[k][j]
+            for j in range(self.num_jack):
+                for b, random_vec in enumerate(random_vecs):
+                    if (k, b, self.num_jack) not in self.U:
+                        self.U[(k, b, self.num_jack)] = 0
+                    self.U[(k, b, self.num_jack)] += Z[(k, j, b)] 
 
-                for j in range(self.num_jack):
-                    self.U[k][b][j] = self.U[k][b][-1] - Z[k][b][j]
-                    self.V[k][j] = self.H[k][-1] - H[k][j]
-    
+                if (k, self.num_jack) not in self.V:
+                    self.V[(k, self.num_jack)] = 0
+                self.V[(k, self.num_jack)] += H[(k, j)]
+            
+
+            for j in range(self.num_jack):
+                for b, random_vec in enumerate(random_vecs):
+                    self.U[(k, b, j)] = self.U[(k, b, self.num_jack)] - Z[(k, j, b)]
+                self.V[(k, j)] = self.V[(k, self.num_jack)] - H[(k, j)]            
      
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
         """
@@ -219,12 +232,16 @@ class RHE:
 
         sigma_ests = []
 
+        print(self.V)
+
         for j in range(self.num_jack + 1):
             if j != self.num_jack:
                 geno_chunk = self._get_jacknife_subsample(self.geno, j)
                 geno_chunk_all_gen = self.partition_bins(geno_chunk)
             else:
                 geno_chunk_all_gen = self.partition_bins(self.geno)
+
+
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
             q = np.zeros((self.num_bin+1, 1))
@@ -234,35 +251,45 @@ class RHE:
                     M_k = geno_k.num_snp
                     M_l = geno_l.num_snp
                     for b in range(self.num_random_vec):
-                        T[k_k][k_l] += (self.U[k_k][j][b]).T @ self.U[k_l][j][b]
+                        T[k_k][k_l] += (self.U[(k_k, b, j)]).T @ self.U[(k_l, b, j)]
                     T[k_k][k_l] /= (self.num_random_vec)
-                    T[k_k][k_l] /= (M_k * M_l)
+                    T[k_k][k_l] /= (np.sqrt(M_k) * np.sqrt(M_l))
 
             for k, geno in enumerate(geno_chunk_all_gen):
                 M_k = geno.num_snp
                 self.M[j][k] = M_k
-                Xi = geno.copy()/np.sqrt(M_k)
+                Xi = (geno.gen).copy()/np.sqrt(M_k)
                 T[k, self.num_bin] = np.trace(Xi@Xi.T) 
                 T[self.num_bin, k] = np.trace(Xi@Xi.T)
-                q[k] = (self.V[k][j]).T @ self.V[k][j] / M_k
+                q[k] = (self.V[(k, j)]).T @ self.V[(k, j)] / M_k
 
             T[self.num_bin, self.num_bin] = self.num_indv
             q[self.num_bin] = self.pheno.T @ self.pheno
 
             if method == "QR":
                 sigma_est = solve_linear_equation(T,q)
+                sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             elif method == "lstsq":
                 sigma_est = solve_linear_qr(T,q)
+                sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             else:
                 raise ValueError("Unsupported method for solving linear equation")
-        
+            
+        sigma_ests = np.array(sigma_ests)
+
+        print("sigma_ests")
+        print(sigma_ests)
+
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
+
+        print("sigma_ests_total")
+        print(sigma_ests_total)
             
         return sigma_est_jackknife, sigma_ests_total
 
-    def estimate_error(self, ests: List):
+    def estimate_error(self, ests: List[List]):
             """
             Estimate the standard error
             Parameters:
@@ -276,11 +303,15 @@ class RHE:
 
             SE = []
             
-            for bin_index in range(self.num_bin):
+            print("est")
+            print(ests)
+            for bin_index in range(ests.shape[1]):
                 bin_values = ests[:, bin_index]
                 mean_bin = np.mean(bin_values)
-                sq_diffs = (bin_values - mean_bin)**2
-                se_bin = np.sqrt((self.num_jack - 1) / self.num_jack * np.sum(sq_diffs))
+                sq_diffs = 0
+                for bin_value in bin_values:
+                    sq_diffs += (bin_value - mean_bin)**2
+                se_bin = np.sqrt((self.num_jack - 1) * sq_diffs / self.num_jack)
                 SE.append(se_bin)
 
             return SE
@@ -318,6 +349,8 @@ class RHE:
             h2_list.append(h_SNP_2)
             h2.append(h2_list)
         
+        h2 = np.array(h2)
+        
         h2_jackknife, h2_total = h2[:-1, :], h2[-1, :]
 
         return h2_jackknife, h2_total
@@ -354,6 +387,8 @@ class RHE:
                 enrichment_jack_bin.append(e_k)
         
             enrichment.append(enrichment_jack_bin)
+
+        enrichment = np.array(enrichment)
         
         enrichment_jackknife, enrichment_total = enrichment[:-1, :], enrichment[-1, :]
 
@@ -368,21 +403,24 @@ class RHE:
 
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
 
-        sig_errs = self.estimate_error(sigma_ests_total)
+        sig_errs = self.estimate_error(sigma_est_jackknife)
 
         for i, est in enumerate(sigma_ests_total):
-            print(f"sigma^2 estimate for bin {i}: {est}, SE: {sig_errs[i]}")
+            if i == len(sigma_ests_total) - 1:
+                print(f"residual variance: {est}, SE: {sig_errs[i]}")
+            else:
+                print(f"sigma^2 estimate for bin {i}: {est}, SE: {sig_errs[i]}")
         
         h2_jackknife, h2_total = self.compute_h2(sigma_est_jackknife, sigma_ests_total)
 
-        sig_errs_h2 = self.estimate_error(h2_total)
+        sig_errs_h2 = self.estimate_error(h2_jackknife)
 
         for i, est_h2 in enumerate(h2_total):
             print(f"h^2 for bin {i}: {est_h2}, SE: {sig_errs_h2[i]}")
 
-        enrichment_jackknife, enrichment_total = self.compute_enrichment(self, h2_jackknife, h2_total)
+        enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
 
-        sig_errs_enrichment = self.estimate_error(enrichment_total)
+        sig_errs_enrichment = self.estimate_error(enrichment_jackknife)
 
         for i, est_enrichment in enumerate(enrichment_total):
-            print(f"h^2 for bin {i}: {est_enrichment}, SE: {sig_errs_enrichment[i]}")
+            print(f"enrichment for bin {i}: {est_enrichment}, SE: {sig_errs_enrichment[i]}")
