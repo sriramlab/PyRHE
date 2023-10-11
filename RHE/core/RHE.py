@@ -11,8 +11,8 @@ from RHE.util.file_processing import *
 
 class GenoChunk:
     def __init__(self):
-        self.gen = None # genotype matrix in the bin
-        self.num_snp = 0 # number of snps in the bin
+        self.gen = None 
+        self.num_snp = 0 
 
 
 class RHE:
@@ -24,7 +24,7 @@ class RHE:
         num_bin: int = 8,
         num_jack: int = 1,
         num_random_vec: int = 10,
-        standardize: bool = False,
+        standardize: bool = True,
         verbose: bool = True,
         seed: int = 0
     ):
@@ -68,7 +68,7 @@ class RHE:
         # read pheno file
         if pheno_file is not None:
             self.pheno = read_pheno(pheno_file)
-            assert self.num_ind == y[0]
+            assert self.num_ind == self.pheno[0]
         else:
             self.pheno = None
 
@@ -83,6 +83,8 @@ class RHE:
 
         self.num_bin, self.annot_matrix = read_annot(annot_file, self.num_jack)
 
+        self.H = {}
+        self.Z = {}
         self.U = {}
         self.V = {}
         self.M = np.zeros((self.num_jack + 1, self.num_bin)) # number of geno in each bin in each jackknife subsample 
@@ -95,7 +97,6 @@ class RHE:
         Simulate phenotype y from X and sigma_list
         '''
 
-        print(self.num_bin)
         if len(sigma_list) != self.num_bin:
             
             raise ValueError("Number of elements in sigma list should be equal to number of bins")
@@ -151,16 +152,19 @@ class RHE:
         bin_to_snp_indices = self._bin_to_snp()
         
         all_gen = [GenoChunk() for _ in range(len(bin_to_snp_indices))]
+
         for i, data in enumerate(all_gen):
-            data.num_snp = len(bin_to_snp_indices[i])
-            data.gen = gen[:, bin_to_snp_indices[i]]
+            snp_indices = bin_to_snp_indices[i]            
+            valid_indices = [idx for idx in snp_indices if not np.isnan(gen[0][idx])]
+            data.num_snp = len(valid_indices)
+            data.gen = gen[:, valid_indices]
         
         return all_gen
 
         
-    def _get_jacknife_subsample(self, gen: ndarray, jack_index: int) -> ndarray:
+    def _get_jacknife_subsample(self, gen: np.ndarray, jack_index: int) -> np.ndarray:
         """
-        Get the (jack_index)th subsample from the genotype matrix
+        Get the genotype matrix with the (jack_index)th subsample masked
         """
 
         step_size = self.num_snp // self.num_jack
@@ -168,51 +172,67 @@ class RHE:
         chunk_size = step_size if jack_index < (self.num_jack - 1) else step_size + step_size_rem
         start = jack_index * step_size
         end = start + chunk_size
-        return gen[:, start:end]
         
+        gen_masked = gen.copy()
+        gen_masked[:, :start] = np.nan
+        gen_masked[:, end:] = np.nan
+        
+        return gen_masked
+    
 
+    def _get_actual_jacknife_subsample(self, gen: np.ndarray, jack_index: int) -> np.ndarray:
+        """
+        Get the actual jackknife subsample by excluding the jackknife subsample
+        obtained using _get_jacknife_subsample
+        """
+
+        step_size = self.num_snp // self.num_jack
+        step_size_rem = self.num_snp % self.num_jack
+        chunk_size = step_size if jack_index < (self.num_jack - 1) else step_size + step_size_rem
+        start = jack_index * step_size
+        end = start + chunk_size
+        
+        gen_masked = gen.copy()
+        gen_masked[:, start:end] = np.nan
+        
+        return gen_masked
+        
     def pre_compute(self):
         """
         Compute U and V 
         """
-        random_vecs = [np.random.rand(self.num_indv, 1) for _ in range(self.num_random_vec)]
+        random_vecs = [np.random.randn(self.num_indv, 1) for _ in range(self.num_random_vec)]
 
-        Z = {}
-        H = {}        
         for j in range(self.num_jack):
             X_j = self._get_jacknife_subsample(self.geno, j)
             all_gen = self.partition_bins(X_j)
-
-            if self.verbose:
-                print("Partitioned gen:")
-                for gen in all_gen:
-                    print(gen.gen)
-                    print(gen.num_snp)
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
+                # M = X_kj.shape[1]
+                # X_kj = X_kj / np.sqrt(M)
                 for b, random_vec in enumerate(random_vecs):
-                    Z[(k, j, b)] = X_kj @ X_kj.T @ random_vec
+                    self.Z[(k, j, b)] = X_kj @ X_kj.T @ random_vec
             
                 v = X_kj.T @ self.pheno
-                H[(k, j)] = v.T @ v
+                self.H[(k, j)] = v.T @ v
         
         for k in range(self.num_bin):
             for j in range(self.num_jack):
                 for b, random_vec in enumerate(random_vecs):
                     if (k, b, self.num_jack) not in self.U:
                         self.U[(k, b, self.num_jack)] = 0
-                    self.U[(k, b, self.num_jack)] += Z[(k, j, b)] 
+                    self.U[(k, b, self.num_jack)] += self.Z[(k, j, b)] 
 
                 if (k, self.num_jack) not in self.V:
                     self.V[(k, self.num_jack)] = 0
-                self.V[(k, self.num_jack)] += H[(k, j)]
+                self.V[(k, self.num_jack)] += self.H[(k, j)]
             
 
             for j in range(self.num_jack):
                 for b, random_vec in enumerate(random_vecs):
-                    self.U[(k, b, j)] = self.U[(k, b, self.num_jack)] - Z[(k, j, b)]
-                self.V[(k, j)] = self.V[(k, self.num_jack)] - H[(k, j)]            
+                    self.U[(k, b, j)] = self.U[(k, b, self.num_jack)] - self.Z[(k, j, b)]
+                self.V[(k, j)] = self.V[(k, self.num_jack)] - self.H[(k, j)]            
      
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
         """
@@ -232,15 +252,12 @@ class RHE:
 
         sigma_ests = []
 
-        print(self.V)
-
         for j in range(self.num_jack + 1):
             if j != self.num_jack:
-                geno_chunk = self._get_jacknife_subsample(self.geno, j)
+                geno_chunk = self._get_actual_jacknife_subsample(self.geno, j)
                 geno_chunk_all_gen = self.partition_bins(geno_chunk)
             else:
                 geno_chunk_all_gen = self.partition_bins(self.geno)
-
 
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
@@ -251,17 +268,18 @@ class RHE:
                     M_k = geno_k.num_snp
                     M_l = geno_l.num_snp
                     for b in range(self.num_random_vec):
-                        T[k_k][k_l] += (self.U[(k_k, b, j)]).T @ self.U[(k_l, b, j)]
-                    T[k_k][k_l] /= (self.num_random_vec)
-                    T[k_k][k_l] /= (np.sqrt(M_k) * np.sqrt(M_l))
+                        T[k_k, k_l] += (self.U[(k_k, b, j)]).T @ self.U[(k_l, b, j)]
+                    T[k_k, k_l] /= (self.num_random_vec)
+                    T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
 
             for k, geno in enumerate(geno_chunk_all_gen):
                 M_k = geno.num_snp
-                self.M[j][k] = M_k
+                self.M[j][k] = M_k # record this so don't have to extract the corresponding num_snp for the chunk every time
                 Xi = (geno.gen).copy()/np.sqrt(M_k)
-                T[k, self.num_bin] = np.trace(Xi@Xi.T) 
-                T[self.num_bin, k] = np.trace(Xi@Xi.T)
-                q[k] = (self.V[(k, j)]).T @ self.V[(k, j)] / M_k
+                T[k, self.num_bin] = np.trace(Xi@Xi.T) if M_k != 0 else 0
+                T[self.num_bin, k] = np.trace(Xi@Xi.T) if M_k != 0 else 0
+                q[k] = self.V[(k, j)]
+                q[k] = q[k] / M_k if M_k != 0 else 0
 
             T[self.num_bin, self.num_bin] = self.num_indv
             q[self.num_bin] = self.pheno.T @ self.pheno
@@ -279,13 +297,7 @@ class RHE:
             
         sigma_ests = np.array(sigma_ests)
 
-        print("sigma_ests")
-        print(sigma_ests)
-
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
-
-        print("sigma_ests_total")
-        print(sigma_ests_total)
             
         return sigma_est_jackknife, sigma_ests_total
 
@@ -302,9 +314,7 @@ class RHE:
             """
 
             SE = []
-            
-            print("est")
-            print(ests)
+
             for bin_index in range(ests.shape[1]):
                 bin_values = ests[:, bin_index]
                 mean_bin = np.mean(bin_values)
@@ -383,7 +393,7 @@ class RHE:
                 h_SNP_2 = h2_jack[-1]
                 M_k = self.M[j][k]
                 M = sum(self.M[j])
-                e_k = (hk_2 / h_SNP_2) / (M_k + M)
+                e_k = (hk_2 / h_SNP_2) / (M_k + M) if M_k + M != 0 else 0
                 enrichment_jack_bin.append(e_k)
         
             enrichment.append(enrichment_jack_bin)
@@ -424,3 +434,8 @@ class RHE:
 
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {sig_errs_enrichment[i]}")
+
+    def get_yxxy(self):
+        if not self.H:  
+            raise ValueError("yxxy has not been computed yet")
+        return self.H
