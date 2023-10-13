@@ -11,3 +11,5 @@ generated_annot
 *.bed
 *.bim
 *.fam
+
+*.json
