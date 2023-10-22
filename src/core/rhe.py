@@ -3,7 +3,6 @@ Non streaming version of RHE
 """
 import numpy as np
 from typing import List, Tuple, Optional
-from numpy import ndarray
 from bed_reader import open_bed
 from src.util.math import *
 from src.util.file_processing import *
@@ -14,17 +13,16 @@ class GenoChunk:
         self.gen = None 
         self.num_snp = 0 
 
-
 class RHE:
     def __init__(
         self,
         geno_file: str,
         annot_file: str = None,
         pheno_file: str = None,
+        cov_file: str = None,
         num_bin: int = 8,
         num_jack: int = 1,
         num_random_vec: int = 10,
-        standardize: bool = True,
         verbose: bool = True,
         seed: int = 0
     ):
@@ -55,9 +53,6 @@ class RHE:
 
         self.num_indv = self.geno.shape[0]
         self.num_snp = self.geno.shape[1]
-        
-        # # impute geno
-        # self.geno = impute_geno(self.geno, standardize=standardize)
 
         # read bim file
         assert self.num_snp == read_bim(geno_file + ".bim")
@@ -83,14 +78,27 @@ class RHE:
 
         self.num_bin, self.annot_matrix = read_annot(annot_file, self.num_jack)
 
-        self.H = {}
-        self.Z = {}
-        self.U = {}
-        self.V = {}
-        self.M = np.zeros((self.num_jack + 1, self.num_bin)) # number of geno in each bin in each jackknife subsample 
-                                                             # last dim is total
+        # read covariance file
+        if cov_file is None:
+            self.use_cov = False
+            self.cov_matrix = None
+            self.cov_matrix_aug = None
+        else:
+            self.use_cov = True
+            self.cov_matrix, _ = read_cov(cov_file)
+            self.cov_matrix_aug = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
-        self.M = np.zeros((self.num_jack + 1, self.num_bin))
+        self.H = np.zeros((self.num_bin, self.num_jack + 1))
+        self.Z = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
+        self.U = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
+        self.V = np.zeros((self.num_bin, self.num_jack + 1))
+        self.M = np.zeros((self.num_jack + 1, self.num_bin)) 
+        self.cov_H = np.zeros((self.num_bin, self.num_jack + 1)) if self.use_cov else None
+        self.cov_Z_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+        self.cov_Z_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+        self.cov_U_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+        self.cov_U_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -199,12 +207,22 @@ class RHE:
 
         excluded_columns = list(range(start, end))
         return subsample, excluded_columns
+    
+    def regress_pheno(self, cov_matrix, pheno):
+        """
+        Project y onto the column space of the covariance matrix and compute the residual
+        """
+        cov_matrix_aug = np.linalg.inv(cov_matrix.T @ cov_matrix)
+        return pheno - cov_matrix @ cov_matrix_aug @ cov_matrix.T @ pheno
         
     def pre_compute(self):
         """
         Compute U and V 
         """
         random_vecs = [np.random.randn(self.num_indv, 1) for _ in range(self.num_random_vec)]
+        if self.use_cov:
+            for b in range(self.num_random_vec):
+                random_vecs[b] = self.cov_matrix @ (self.cov_matrix_aug @ self.cov_matrix.T @ random_vecs[b])
 
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
@@ -213,31 +231,29 @@ class RHE:
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
-                X_kj = impute_geno(X_kj)
-                # M = X_kj.shape[1]
-                # X_kj = X_kj / np.sqrt(M)
+
+                X_kj = impute_geno(X_kj) # TODO: modify impute geno
                 for b, random_vec in enumerate(random_vecs):
-                    self.Z[(k, j, b)] = X_kj @ X_kj.T @ random_vec
-            
-                v = X_kj.T @ self.pheno
-                self.H[(k, j)] = v.T @ v
+                    self.Z[k, j, b, :] = (X_kj @ X_kj.T @ random_vec).flatten()
+
+                if self.use_cov:
+                    for b in range(self.num_random_vec):
+                        self.cov_Z_1[k, j, b, :] = (self.cov_matrix @ (self.cov_matrix_aug @ (self.cov_matrix.T @ self.Z[k][j][b]))).flatten()
+                        self.cov_Z_2[k, j, b, :] = X_kj @ X_kj.T @ random_vecs[b].flatten()
+
+                v = X_kj.T @ self.pheno if not self.use_cov else X_kj.T @ (self.regress_pheno(self.cov_matrix, self.pheno))
+                self.H[k][j] = v.T @ v
         
         for k in range(self.num_bin):
             for j in range(self.num_jack):
                 for b, random_vec in enumerate(random_vecs):
-                    if (k, b, self.num_jack) not in self.U:
-                        self.U[(k, b, self.num_jack)] = 0
-                    self.U[(k, b, self.num_jack)] += self.Z[(k, j, b)] 
-
-                if (k, self.num_jack) not in self.V:
-                    self.V[(k, self.num_jack)] = 0
-                self.V[(k, self.num_jack)] += self.H[(k, j)]
+                    self.U[k][self.num_jack][b] += self.Z[k][j][b]
+                self.V[k][self.num_jack] += self.H[k][j]
             
-
             for j in range(self.num_jack):
                 for b, random_vec in enumerate(random_vecs):
-                    self.U[(k, b, j)] = self.U[(k, b, self.num_jack)] - self.Z[(k, j, b)]
-                self.V[(k, j)] = self.V[(k, self.num_jack)] - self.H[(k, j)]            
+                    self.U[k][j][b] = self.U[k][self.num_jack][b] - self.Z[k][j][b]
+                self.V[k][j] = self.V[k][self.num_jack] - self.H[k][j]
      
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
         """
@@ -260,7 +276,7 @@ class RHE:
         for j in range(self.num_jack + 1):
             print(f"Estimate for jackknife sample {j}")
             if j != self.num_jack:
-                geno_chunk, excluded_cols = self._get_actual_jacknife_subsample(self.geno, j)
+                _, excluded_cols = self._get_actual_jacknife_subsample(self.geno, j)
                 geno_chunk_all_gen = self.partition_bins(self.geno, excluded_cols)
             else:
                 geno_chunk_all_gen = self.partition_bins(self.geno)
@@ -274,21 +290,37 @@ class RHE:
                     M_k = geno_k.num_snp
                     M_l = geno_l.num_snp
                     for b in range(self.num_random_vec):
-                        T[k_k, k_l] += (self.U[(k_k, b, j)]).T @ self.U[(k_l, b, j)]
+                        U_kbj_1 = self.U[k_k][j][b]
+                        U_kbj_2 = self.U[k_l][j][b]
+                        T[k_k, k_l] += U_kbj_1.T @ U_kbj_2
+                        if self.use_cov:
+                            CU_1_kbj_1 = self.cov_Z_1[k_k][j][b]
+                            CU_2_kbj_1 = self.cov_Z_2[k_l][j][b]
+                            T[k_k, k_l] += CU_1_kbj_1 @ CU_2_kbj_1 - 2 * U_kbj_1 @ CU_2_kbj_1.T 
+
                     T[k_k, k_l] /= (self.num_random_vec)
                     T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
 
             for k, geno in enumerate(geno_chunk_all_gen):
                 M_k = geno.num_snp
                 self.M[j][k] = M_k # record this so don't have to extract the corresponding num_snp for the chunk every time
-                Xi = impute_geno(geno.gen).copy()/np.sqrt(M_k)
-                T[k, self.num_bin] = np.trace(Xi@Xi.T) if M_k != 0 else 0
-                T[self.num_bin, k] = np.trace(Xi@Xi.T) if M_k != 0 else 0
+                # Xi = impute_geno(geno.gen).copy()/np.sqrt(M_k)
+                # T[k, self.num_bin] = np.trace(Xi@Xi.T) if M_k != 0 else 0
+                # T[self.num_bin, k] = np.trace(Xi@Xi.T) if M_k != 0 else 0
+                T[k, self.num_bin] = self.num_indv
+                T[self.num_bin, k] = self.num_indv
+
+                if self.use_cov:
+                    # TODO
+                    pass
+                        
                 q[k] = self.V[(k, j)]
                 q[k] = q[k] / M_k if M_k != 0 else 0
-
-            T[self.num_bin, self.num_bin] = self.num_indv
-            q[self.num_bin] = self.pheno.T @ self.pheno
+            
+            
+            T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
+            pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
+            q[self.num_bin] = pheno.T @ pheno 
 
             if method == "QR":
                 sigma_est = solve_linear_equation(T,q)
@@ -444,6 +476,6 @@ class RHE:
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
     def get_yxxy(self):
-        if not self.H:  
+        if not self.V:  
             raise ValueError("yxxy has not been computed yet")
-        return self.H
+        return self.V

@@ -13,7 +13,7 @@ def _simulate_geno_from_random(p_j):
         return 2
     
 
-def impute_geno(X, standardize: bool = True):
+def impute_geno(X):
     N = X.shape[0]
     M = X.shape[1]
     X_imp = X.copy()
@@ -32,10 +32,9 @@ def impute_geno(X, standardize: bool = True):
             if np.isnan(X[j,m]):
                 X_imp[j, m] = _simulate_geno_from_random(observed_sum)
 
-    if standardize:      
-        # standardize
-        X_imp = (X_imp-np.mean(X_imp, axis=0))/np.std(X_imp, axis=0)
-
+    means = np.mean(X_imp, axis=0)
+    stds = 1/np.sqrt(means*(1-0.5*means))
+    X_imp = (X_imp - means) * stds
     return X_imp
 
 
