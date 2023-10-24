@@ -19,7 +19,7 @@ rhe = RHE(
     geno_file=geno_path,
     annot_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/annot.txt',
     num_bin=8,
-    num_jack=2
+    num_jack=2,
 )
 
 print("Simulating Phenotype...")

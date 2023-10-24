@@ -1,8 +1,3 @@
-"""
-Non streaming version of RHE
-"""
-import time
-import torch
 import numpy as np
 from typing import List, Tuple, Optional
 from bed_reader import open_bed
@@ -79,7 +74,9 @@ class RHE:
 
             generate_annot(annot_file, self.num_snp, self.num_bin)
 
-        self.num_bin, self.annot_matrix = read_annot(annot_file, self.num_jack)
+        self.num_bin, self.annot_matrix, len_bin = read_annot(annot_file, self.num_jack)
+
+        print(len_bin)
 
         # read covariance file
         if cov_file is None:
@@ -95,15 +92,30 @@ class RHE:
         self.Z = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
         self.U = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
         self.V = np.zeros((self.num_bin, self.num_jack + 1))
-        self.M = np.zeros((self.num_jack + 1, self.num_bin)) 
         self.cov_H = np.zeros((self.num_bin, self.num_jack + 1)) if self.use_cov else None
         self.cov_Z_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
         self.cov_Z_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
         self.cov_U_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
         self.cov_U_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.M = np.zeros((self.num_jack + 1, self.num_bin))
+        self.M[self.num_jack] = len_bin
+
+        try:
+            import torch
+            self._TORCH_AVAILABLE = True
+            self.torch = torch
+        except ImportError:
+            self._TORCH_AVAILABLE = False
+            self.torch = None
+
+        if self._TORCH_AVAILABLE:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = None
+
         self.streaming = streaming
+
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -124,6 +136,7 @@ class RHE:
                 y += np.random.randn(self.num_snp,1)*np.sqrt(sigma_epsilon) # add the effect sizes
 
         else:
+
             all_gen = self.partition_bins(impute_geno(self.geno, simulate_geno=True))
 
             h = 1 - sum(sigma_list) # residual covariance
@@ -191,35 +204,15 @@ class RHE:
 
         excluded_columns = list(set(range(gen.shape[1])) - set(range(start, end)))
         return subsample, excluded_columns
-    
-
-    def _get_actual_jacknife_subsample(self, gen: np.ndarray, jack_index: int) -> np.ndarray:
-        """
-        Get the actual jackknife subsample by excluding the jackknife subsample
-        obtained using _get_jacknife_subsample
-        """
-
-        step_size = self.num_snp // self.num_jack
-        step_size_rem = self.num_snp % self.num_jack
-        chunk_size = step_size if jack_index < (self.num_jack - 1) else step_size + step_size_rem
-        start = jack_index * step_size
-        end = start + chunk_size
-        
-        included_columns = list(set(range(gen.shape[1])) - set(range(start, end)))
-
-        subsample = gen[:, included_columns]
-
-        excluded_columns = list(range(start, end))
-        return subsample, excluded_columns
 
     def _to_tensor(self, mat):
-        return torch.from_numpy(mat).float().to(self.device)
+        return self.torch.from_numpy(mat).float().to(self.device) if (self._TORCH_AVAILABLE and self.device == self.torch.device("cuda")) else mat
 
     def mat_mul(self, *mats, to_numpy=True):
         if not mats:
             raise ValueError("At least one matrix is required.")
 
-        if self.device == torch.device("cuda"):
+        if (self._TORCH_AVAILABLE and self.device == self.torch.device("cuda")):
             result_tensor = self._to_tensor(mats[0])
             for mat in mats[1:]:
                 tensor = self._to_tensor(mat)
@@ -257,6 +250,7 @@ class RHE:
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
+                self.M[j][k] = self.M[self.num_jack][k] - geno.num_snp # store the dimension with the corresponding block
                 X_kj = impute_geno(X_kj)
                 for b, random_vec in enumerate(random_vecs):
                     # start = time.time()                    
@@ -308,20 +302,14 @@ class RHE:
 
         for j in range(self.num_jack + 1):
             print(f"Estimate for jackknife sample {j}")
-            if j != self.num_jack:
-                _, excluded_cols = self._get_actual_jacknife_subsample(self.geno, j)
-                geno_chunk_all_gen = self.partition_bins(self.geno, excluded_cols)
-            else:
-                geno_chunk_all_gen = self.partition_bins(self.geno)
-
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
             q = np.zeros((self.num_bin+1, 1))
 
-            for k_k, geno_k in enumerate(geno_chunk_all_gen):
-                for k_l, geno_l in enumerate(geno_chunk_all_gen):
-                    M_k = geno_k.num_snp
-                    M_l = geno_l.num_snp
+            for k_k in range(self.num_bin):
+                for k_l in range(self.num_bin):
+                    M_k = self.M[j][k_k]
+                    M_l = self.M[j][k_l]
                     for b in range(self.num_random_vec):
                         U_kbj_1 = self.U[k_k][j][b]
                         U_kbj_2 = self.U[k_l][j][b]
@@ -334,9 +322,9 @@ class RHE:
                     T[k_k, k_l] /= (self.num_random_vec)
                     T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
 
-            for k, geno in enumerate(geno_chunk_all_gen):
-                M_k = geno.num_snp
-                self.M[j][k] = M_k # record this so don't have to extract the corresponding num_snp for the chunk every time
+            for k in range(self.num_bin):
+                M_k = self.M[j][k]
+                # M_k = geno.num_snp
                 # Xi = impute_geno(geno.gen).copy()/np.sqrt(M_k)
                 # T[k, self.num_bin] = np.trace(Xi@Xi.T) if M_k != 0 else 0
                 # T[self.num_bin, k] = np.trace(Xi@Xi.T) if M_k != 0 else 0

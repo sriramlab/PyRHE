@@ -44,12 +44,11 @@ def read_annot(filename, Njack):
 
                 if linenum == 0:
                     Nbin = len(tokens)
-                    jack_bin = np.zeros((Njack, Nbin), dtype=int)
-                    len_bins = np.zeros(Nbin, dtype=int)
+                    len_bin = np.zeros(Nbin, dtype=int)
 
                 for i, val in enumerate(tokens):
                     if val == 1:
-                        len_bins[i] += 1
+                        len_bin[i] += 1
 
                 annot_bool.append(tokens)
         
@@ -66,22 +65,10 @@ def read_annot(filename, Njack):
 
     print("Number of SNPs per block:", Nsnp // Njack)
 
-    for i, num_snps in enumerate(len_bins):
+    for i, num_snps in enumerate(len_bin):
         print(num_snps, "SNPs in", i, "-th bin")
-
-    # step_size = Nsnp // Njack
-    # jack_bin = np.zeros((Njack, Nbin), dtype=int)
-
-    # for i, snp_row in enumerate(annot_bool):
-    #     for j, val in enumerate(snp_row):
-    #         if val == 1:
-    #             temp = i // step_size
-    #             if temp >= Njack:
-    #                 temp = Njack - 1
-    #             jack_bin[temp][j] += 1
-                
-    # return annot_bool, jack_bin
-    return Nbin, annot_bool
+        
+    return Nbin, annot_bool, len_bin
 
 
 def read_pheno(filename):
