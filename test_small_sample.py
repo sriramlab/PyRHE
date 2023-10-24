@@ -1,5 +1,4 @@
 from src.core.rhe import RHE
-from src.core.rhe_mem import RHE
 geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_1"
 
 # X = np.array([

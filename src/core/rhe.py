@@ -124,8 +124,7 @@ class RHE:
                 y += np.random.randn(self.num_snp,1)*np.sqrt(sigma_epsilon) # add the effect sizes
 
         else:
-
-            all_gen = self.partition_bins(impute_geno(self.geno))
+            all_gen = self.partition_bins(impute_geno(self.geno, simulate_geno=True))
 
             h = 1 - sum(sigma_list) # residual covariance
             sigma_epsilon = np.random.multivariate_normal([0] * self.num_indv, np.diag(np.full(self.num_indv, h)))
