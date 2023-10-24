@@ -13,3 +13,6 @@ generated_annot
 *.fam
 
 *.json
+*.pkl
+
+.env
