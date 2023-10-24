@@ -1,5 +1,5 @@
 from src.core.rhe import RHE
-from src.core.rhe_mem import StreamingRHE
+from src.core.rhe_mem import RHE
 geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_1"
 
 # X = np.array([
@@ -16,7 +16,7 @@ geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_
     
 # to_bed(plink_bed_file, X)
 
-rhe = StreamingRHE(
+rhe = RHE(
     geno_file=geno_path,
     annot_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/annot.txt',
     num_bin=8,

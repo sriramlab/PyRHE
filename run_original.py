@@ -3,6 +3,7 @@ import os
 import json
 import glob
 import re 
+import time
 
 geno_path = "/u/scratch/b/bronsonj/geno/25k_allsnps"
 annot_path = "/u/home/j/jiayini/project-sriram/RHE_project/data/annot/annot_1"
@@ -21,6 +22,7 @@ pattern = re.compile(r"Sigma\^2_(\d): (\d+\.\d+)  SE: (\d+\.\d+)")
 
 for pheno_file in pheno_files:
     print(f"processing {pheno_file}")
+    start_time = time.time() 
     cmd = [
         rhemc_mem_path,
         "-g", geno_path,
@@ -47,6 +49,9 @@ for pheno_file in pheno_files:
     else:
         print(f"Error with {pheno_file}:")
         print(result.stderr)
+
+    end_time = time.time()
+    print(f"RHE original runtime: {end_time - start_time:.5f} seconds")
 
 with open(output_file, 'w', encoding='utf-8') as f:
     json.dump(all_results, f, ensure_ascii=False, indent=4)

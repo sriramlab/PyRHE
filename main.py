@@ -2,7 +2,6 @@ import argparse
 import glob
 import pickle
 from src.core.rhe import RHE
-from src.core.rhe_mem import StreamingRHE
 
 def main(args):
 
@@ -15,22 +14,14 @@ def main(args):
 
     
     for pheno_file in pheno_files:
-        if args.method == "StreamingRHE":
-            rhe = StreamingRHE(
-                geno_file=args.geno,
-                annot_file=args.annot,
-                pheno_file=pheno_file,
-                num_jack=args.num_block,
-                num_random_vec=args.num_vec,
-            )
-        else:
-            rhe = RHE(
-                geno_file=args.geno,
-                annot_file=args.annot,
-                pheno_file=pheno_file,
-                num_jack=args.num_block,
-                num_random_vec=args.num_vec,
-            )
+        rhe = RHE(
+            geno_file=args.geno,
+            annot_file=args.annot,
+            pheno_file=pheno_file,
+            num_jack=args.num_block,
+            num_random_vec=args.num_vec,
+            streaming=not args.streaming
+        )
 
         # RHE
         sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs = rhe()
@@ -54,7 +45,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Randomized Haseman-Elston regression for Multi-variance Components') 
-    parser.add_argument('--method', type=str, default="StreamingRHE", choices=['StreamingRHE', 'RHE'], help='method to estimate')
+    parser.add_argument('--no-streaming', action='store_false', dest='streaming')
     parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='covariance file path')

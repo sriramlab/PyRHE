@@ -1,6 +1,8 @@
 """
 Non streaming version of RHE
 """
+import time
+import torch
 import numpy as np
 from typing import List, Tuple, Optional
 from bed_reader import open_bed
@@ -24,7 +26,8 @@ class RHE:
         num_jack: int = 1,
         num_random_vec: int = 10,
         verbose: bool = True,
-        seed: int = 0
+        seed: int = 0,
+        streaming: bool = True,
     ):
         """
         Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
@@ -99,6 +102,8 @@ class RHE:
         self.cov_U_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
         self.cov_U_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
 
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.streaming = streaming
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -207,7 +212,29 @@ class RHE:
 
         excluded_columns = list(range(start, end))
         return subsample, excluded_columns
-    
+
+    def _to_tensor(self, mat):
+        return torch.from_numpy(mat).float().to(self.device)
+
+    def mat_mul(self, *mats, to_numpy=True):
+        if not mats:
+            raise ValueError("At least one matrix is required.")
+
+        if self.device == torch.device("cuda"):
+            result_tensor = self._to_tensor(mats[0])
+            for mat in mats[1:]:
+                tensor = self._to_tensor(mat)
+                result_tensor = result_tensor @ tensor
+            if to_numpy:
+                return result_tensor.cpu().numpy()
+            else:
+                return result_tensor
+        else:
+            result = mats[0]
+            for mat in mats[1:]:
+                result = result @ mat
+            return result
+
     def regress_pheno(self, cov_matrix, pheno):
         """
         Project y onto the column space of the covariance matrix and compute the residual
@@ -231,18 +258,25 @@ class RHE:
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
-
-                X_kj = impute_geno(X_kj) # TODO: modify impute geno
+                X_kj = impute_geno(X_kj)
                 for b, random_vec in enumerate(random_vecs):
-                    self.Z[k, j, b, :] = (X_kj @ X_kj.T @ random_vec).flatten()
-
+                    # start = time.time()                    
+                    self.Z[k, j, b, :] = (self.mat_mul(X_kj, X_kj.T, random_vec)).flatten()
+                    # end = time.time()
+                    # print(end - start)
+                    
                 if self.use_cov:
                     for b in range(self.num_random_vec):
                         self.cov_Z_1[k, j, b, :] = (self.cov_matrix @ (self.cov_matrix_aug @ (self.cov_matrix.T @ self.Z[k][j][b]))).flatten()
                         self.cov_Z_2[k, j, b, :] = X_kj @ X_kj.T @ random_vecs[b].flatten()
 
-                v = X_kj.T @ self.pheno if not self.use_cov else X_kj.T @ (self.regress_pheno(self.cov_matrix, self.pheno))
+                pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
+                v = self.mat_mul(X_kj.T, pheno)
                 self.H[k][j] = v.T @ v
+
+                if self.streaming:
+                    del X_kj
+            
         
         for k in range(self.num_bin):
             for j in range(self.num_jack):
@@ -292,7 +326,7 @@ class RHE:
                     for b in range(self.num_random_vec):
                         U_kbj_1 = self.U[k_k][j][b]
                         U_kbj_2 = self.U[k_l][j][b]
-                        T[k_k, k_l] += U_kbj_1.T @ U_kbj_2
+                        T[k_k, k_l] += self.mat_mul(U_kbj_1.T, U_kbj_2)
                         if self.use_cov:
                             CU_1_kbj_1 = self.cov_Z_1[k_k][j][b]
                             CU_2_kbj_1 = self.cov_Z_2[k_l][j][b]
