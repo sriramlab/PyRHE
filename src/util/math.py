@@ -19,20 +19,16 @@ def impute_geno(X, simulate_geno: bool = False):
     X_imp = X
     if simulate_geno:
         for m in range(M):
+            observed_mask = ~np.isnan(X[:, m])
+            observed_values = X[observed_mask, m]
             
-            observed_sum = 0
-            observed_ct = 0
-            for n in range(N):
-                if not np.isnan(X[n, m]):
-                    observed_ct += 1
-                    observed_sum += X[n, m]
+            observed_ct = observed_values.size
+            observed_sum = np.sum(observed_values)
+            observed_mean = 0.5 * observed_sum / observed_ct
             
-            observed_sum = (observed_sum  / observed_ct)* 0.5
-
-            for j in range(N):
-                if np.isnan(X[j,m]):
-                    X_imp[j, m] = _simulate_geno_from_random(observed_sum)
-
+            missing_mask = np.isnan(X[:, m])
+            X_imp[missing_mask, m] = _simulate_geno_from_random(observed_mean)
+    
     means = np.mean(X_imp, axis=0)
     stds = 1/np.sqrt(means*(1-0.5*means))
     X_imp = (X_imp - means) * stds

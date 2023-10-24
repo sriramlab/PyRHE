@@ -251,7 +251,10 @@ class RHE:
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
                 self.M[j][k] = self.M[self.num_jack][k] - geno.num_snp # store the dimension with the corresponding block
-                X_kj = impute_geno(X_kj)
+                # begin = time.time()
+                X_kj = impute_geno(X_kj, simulate_geno=True)
+                # end = time.time()
+                # print(f"impute time: {end - begin}")
                 for b, random_vec in enumerate(random_vecs):
                     # start = time.time()                    
                     self.Z[k, j, b, :] = (self.mat_mul(X_kj, X_kj.T, random_vec)).flatten()
