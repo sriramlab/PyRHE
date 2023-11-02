@@ -15,7 +15,7 @@ def main(args):
     if not os.path.exists(RESULT_DIR):
         os.makedirs(RESULT_DIR)
 
-    output_file = f"{RESULT_DIR}_{args.output}_{args.num_bin}.json"
+    output_file = f"{RESULT_DIR}/{args.output}_{args.num_bin}.json"
 
     assert os.access(rhemc_mem_path, os.X_OK), f"{rhemc_mem_path} is not executable"
 
@@ -24,7 +24,8 @@ def main(args):
 
     all_results = {}
 
-    pattern = re.compile(r"Sigma\^2_(\d): (\d+\.\d+)  SE: (\d+\.\d+)")
+    # pattern = re.compile(r"Sigma\^2_(\d): (\d+\.\d+)  SE: (\d+\.\d+)")
+    pattern = re.compile(r"Sigma\^2_(\d): (-?\d+\.\d+)  SE: (-?\d+\.\d+)")
 
     for pheno_file in pheno_files:
         print(f"processing {pheno_file}")
@@ -78,3 +79,4 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     main(args)
+
