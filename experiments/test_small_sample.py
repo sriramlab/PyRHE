@@ -1,3 +1,6 @@
+
+import sys
+sys.path.insert(0, '/u/home/j/jiayini/project-sriram/RHE_project')
 from src.core.rhe import RHE
 geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_1"
 

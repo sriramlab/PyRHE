@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 from typing import List, Tuple, Optional
 from bed_reader import open_bed
@@ -38,25 +39,12 @@ class RHE:
         else:
             self.num_bin = None
 
-        # read bed file
-        try:
-            bed = open_bed(geno_file + ".bed")
-            self.geno = bed.read()
-        except FileNotFoundError:
-            raise FileNotFoundError("The .bed file could not be found.")
-        except IOError:
-            raise IOError("An IO error occurred while reading the .bed file.")
-        except Exception as e:
-            raise Exception(f"Error occurred: {e}")
-
-        self.num_indv = self.geno.shape[0]
-        self.num_snp = self.geno.shape[1]
-
-        # read bim file
-        assert self.num_snp == read_bim(geno_file + ".bim")
-
-        # read fam file
-        assert self.num_indv == read_fam(geno_file + ".fam")
+        # read fam and bim file
+        self.geno_bed = open_bed(geno_file + ".bed")
+        self.num_indv = read_fam(geno_file + ".fam")
+        self.num_snp = read_bim(geno_file + ".bim")
+        print(self.num_snp)
+        print(self.num_indv)
 
         # read pheno file
         if pheno_file is not None:
@@ -100,20 +88,8 @@ class RHE:
 
         self.M = np.zeros((self.num_jack + 1, self.num_bin))
         self.M[self.num_jack] = len_bin
-
-        try:
-            import torch
-            self._TORCH_AVAILABLE = True
-            self.torch = torch
-        except ImportError:
-            self._TORCH_AVAILABLE = False
-            self.torch = None
-
-        if self._TORCH_AVAILABLE:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = None
-
+        
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.streaming = streaming
 
     
@@ -121,6 +97,9 @@ class RHE:
         '''
         Simulate phenotype y from X and sigma_list
         '''
+
+        geno = self.geno_bed.read()
+        geno = impute_geno(geno, simulate_geno=True)
 
         if len(sigma_list) != self.num_bin:
             
@@ -136,8 +115,7 @@ class RHE:
                 y += np.random.randn(self.num_snp,1)*np.sqrt(sigma_epsilon) # add the effect sizes
 
         else:
-
-            all_gen = self.partition_bins(impute_geno(self.geno, simulate_geno=True))
+            all_gen = self.partition_bins(geno=geno)
 
             h = 1 - sum(sigma_list) # residual covariance
             sigma_epsilon = np.random.multivariate_normal([0] * self.num_indv, np.diag(np.full(self.num_indv, h)))
@@ -171,7 +149,7 @@ class RHE:
         return bin_to_snp_indices
         
 
-    def partition_bins(self, gen, excluded_columns: Optional[List] = None):
+    def partition_bins(self, excluded_columns: Optional[List] = None, geno: Optional[np.ndarray] = None):
         """
         Partition the genotype matrix into num_bin bins
         """
@@ -181,15 +159,18 @@ class RHE:
         all_gen = [GenoChunk() for _ in range(len(bin_to_snp_indices))]
 
         for i, data in enumerate(all_gen):
-            snp_indices = bin_to_snp_indices[i]            
-            valid_indices = list(set(snp_indices) - set(excluded_columns)) if excluded_columns is not None else snp_indices
+            snp_indices = bin_to_snp_indices[i]   
+            valid_indices = list(set(snp_indices) - set(excluded_columns)) if excluded_columns else snp_indices
             data.num_snp = len(valid_indices)
-            data.gen = gen[:, valid_indices]
+            if geno is not None:
+                data.gen = geno[:, valid_indices]
+            else:
+                data.gen = self.geno_bed.read(index=np.s_[:, valid_indices])
         
         return all_gen
 
         
-    def _get_jacknife_subsample(self, gen: np.ndarray, jack_index: int) -> np.ndarray:
+    def _get_jacknife_subsample(self, jack_index: int) -> np.ndarray:
         """
         Get the jacknife subsample
         """
@@ -199,20 +180,24 @@ class RHE:
         chunk_size = step_size if jack_index < (self.num_jack - 1) else step_size + step_size_rem
         start = jack_index * step_size
         end = start + chunk_size
-        
-        subsample = gen[:, start:end]
 
-        excluded_columns = list(set(range(gen.shape[1])) - set(range(start, end)))
+         # read bed file
+        try:
+            subsample = self.geno_bed.read(index=np.s_[::1,start:end])
+        except Exception as e:
+            raise Exception(f"Error occurred: {e}")
+        
+        excluded_columns = list(set(range(self.num_snp)) - set(range(start, end)))
         return subsample, excluded_columns
 
     def _to_tensor(self, mat):
-        return self.torch.from_numpy(mat).float().to(self.device) if (self._TORCH_AVAILABLE and self.device == self.torch.device("cuda")) else mat
+        return torch.from_numpy(mat).float().to(self.device) if self.device == torch.device("cuda") else mat
 
     def mat_mul(self, *mats, to_numpy=True):
         if not mats:
             raise ValueError("At least one matrix is required.")
 
-        if (self._TORCH_AVAILABLE and self.device == self.torch.device("cuda")):
+        if self.device == torch.device("cuda"):
             result_tensor = self._to_tensor(mats[0])
             for mat in mats[1:]:
                 tensor = self._to_tensor(mat)
@@ -245,8 +230,8 @@ class RHE:
 
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
-            _, excluded_cols = self._get_jacknife_subsample(self.geno, j)
-            all_gen = self.partition_bins(self.geno, excluded_cols)
+            _, excluded_cols = self._get_jacknife_subsample(j)
+            all_gen = self.partition_bins(excluded_cols)
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
