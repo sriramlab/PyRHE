@@ -1,3 +1,4 @@
+import time
 import torch
 import numpy as np
 from typing import List, Tuple, Optional
@@ -91,6 +92,8 @@ class RHE:
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.streaming = streaming
+
+        print(self.device)
 
     
     def simulate_pheno(self, sigma_list: List):
@@ -219,7 +222,7 @@ class RHE:
         cov_matrix_aug = np.linalg.inv(cov_matrix.T @ cov_matrix)
         return pheno - cov_matrix @ cov_matrix_aug @ cov_matrix.T @ pheno
         
-    def pre_compute(self):
+    def pre_compute(self, verbose: bool=False):
         """
         Compute U and V 
         """
@@ -236,15 +239,17 @@ class RHE:
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
                 self.M[j][k] = self.M[self.num_jack][k] - geno.num_snp # store the dimension with the corresponding block
-                # begin = time.time()
+                begin = time.time()
                 X_kj = impute_geno(X_kj, simulate_geno=True)
-                # end = time.time()
-                # print(f"impute time: {end - begin}")
+                end = time.time()
+                if verbose:
+                    print(f"impute time: {end - begin}")
                 for b, random_vec in enumerate(random_vecs):
-                    # start = time.time()                    
-                    self.Z[k, j, b, :] = (self.mat_mul(X_kj, X_kj.T, random_vec)).flatten()
-                    # end = time.time()
-                    # print(end - start)
+                    start = time.time()       
+                    self.Z[k, j, b, :] = (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
+                    end = time.time()
+                    if verbose:
+                        print(f"XXz time: {end - start}")
                     
                 if self.use_cov:
                     for b in range(self.num_random_vec):
@@ -456,7 +461,7 @@ class RHE:
         whole RHE process for printing etc
         """
 
-        self.pre_compute()
+        self.pre_compute(verbose=True)
 
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
 
