@@ -1,7 +1,7 @@
 import time
 import torch
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 from bed_reader import open_bed
 from src.util.math import *
 from src.util.file_processing import *
@@ -77,14 +77,13 @@ class RHE:
         if self.use_cov:
             self.all_zb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
 
+        # XXz
         self.XXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
         self.yXXy = np.zeros((self.num_bin, self.num_jack + 1))
-        self.cov_H = np.zeros((self.num_bin, self.num_jack + 1)) if self.use_cov else None
-        self.cov_Z_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
-        self.cov_Z_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
-        self.cov_U_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
-        self.cov_U_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+        self.UXXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+        self.XXUz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
 
+        # track subsample size
         self.M = np.zeros((self.num_jack + 1, self.num_bin))
         self.M[self.num_jack] = len_bin
         
