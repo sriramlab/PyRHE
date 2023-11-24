@@ -112,7 +112,7 @@ class RHE:
                 y += np.random.randn(self.num_snp,1)*np.sqrt(sigma_epsilon) # add the effect sizes
 
         else:
-            all_gen = self.partition_bins(geno=geno)
+            all_gen = self.partition_bins(geno=geno, annot=self.annot_matrix)
 
             h = 1 - sum(sigma_list) # residual covariance
             sigma_epsilon = np.random.multivariate_normal([0] * self.num_indv, np.diag(np.full(self.num_indv, h)))
@@ -136,33 +136,26 @@ class RHE:
 
         return y, betas
 
-    def _bin_to_snp(self): 
+    def _bin_to_snp(self, annot): 
         bin_to_snp_indices = []
 
         for bin_index in range(self.num_bin):
-            snp_indices = np.nonzero(self.annot_matrix[:, bin_index])[0]
+            snp_indices = np.nonzero(annot[:, bin_index])[0]
             bin_to_snp_indices.append(snp_indices.tolist())
 
         return bin_to_snp_indices
         
 
-    def partition_bins(self, excluded_columns: Optional[List] = None, geno: Optional[np.ndarray] = None):
+    def partition_bins(self, geno: np.ndarray, annot: np.ndarray):
         """
         Partition the genotype matrix into num_bin bins
         """
 
-        bin_to_snp_indices = self._bin_to_snp()
-        
+        bin_to_snp_indices = self._bin_to_snp(annot)
         all_gen = [GenoChunk() for _ in range(len(bin_to_snp_indices))]
-
         for i, data in enumerate(all_gen):
-            snp_indices = bin_to_snp_indices[i]   
-            valid_indices = list(set(snp_indices) - set(excluded_columns)) if excluded_columns else snp_indices
-            data.num_snp = len(valid_indices)
-            if geno is not None:
-                data.gen = geno[:, valid_indices]
-            else:
-                data.gen = self.geno_bed.read(index=np.s_[:, valid_indices])
+            data.num_snp = len(bin_to_snp_indices[i])
+            data.gen = geno[:, bin_to_snp_indices[i]]
         
         return all_gen
 
@@ -181,12 +174,12 @@ class RHE:
          # read bed file
         try:
             subsample = self.geno_bed.read(index=np.s_[::1,start:end])
-            subsample = impute_geno(subsample, simulate_geno=True)
         except Exception as e:
             raise Exception(f"Error occurred: {e}")
 
-        excluded_columns = list(set(range(self.num_snp)) - set(range(start, end)))
-        return subsample, excluded_columns
+        sub_annot = self.annot_matrix[start:end]
+
+        return subsample, sub_annot
 
     def _to_tensor(self, mat):
         return torch.from_numpy(mat).float().to(self.device) if self.device == torch.device("cuda") else mat
@@ -230,13 +223,13 @@ class RHE:
 
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
-            _, excluded_cols = self._get_jacknife_subsample(j)
-            all_gen = self.partition_bins(excluded_cols)
+            subsample, sub_annot = self._get_jacknife_subsample(j)
+            subsample = impute_geno(subsample, simulate_geno=True)
+            all_gen = self.partition_bins(subsample, sub_annot)
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
                 print(X_kj)
-                # X_kj = impute_geno(X_kj, simulate_geno=True)
                 self.M[j][k] = self.M[self.num_jack][k] - geno.num_snp # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     start = time.time()       
