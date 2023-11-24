@@ -1,0 +1,1 @@
+qsub -cwd -V -N DG -l highp,h_data=2G,h_rt=05:00:00 -t 1-25 -pe shared 5 runrhe.sh

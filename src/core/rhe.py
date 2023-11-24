@@ -24,7 +24,6 @@ class RHE:
         num_random_vec: int = 10,
         verbose: bool = True,
         seed: int = 0,
-        streaming: bool = True,
     ):
         """
         Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
@@ -44,8 +43,6 @@ class RHE:
         self.geno_bed = open_bed(geno_file + ".bed")
         self.num_indv = read_fam(geno_file + ".fam")
         self.num_snp = read_bim(geno_file + ".bim")
-        print(self.num_snp)
-        print(self.num_indv)
 
         # read pheno file
         if pheno_file is not None:
@@ -65,22 +62,23 @@ class RHE:
 
         self.num_bin, self.annot_matrix, len_bin = read_annot(annot_file, self.num_jack)
 
-        print(len_bin)
-
         # read covariance file
         if cov_file is None:
             self.use_cov = False
             self.cov_matrix = None
-            self.cov_matrix_aug = None
+            self.Q = None
         else:
             self.use_cov = True
             self.cov_matrix, _ = read_cov(cov_file)
-            self.cov_matrix_aug = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
+            self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
+        
+        # all_zb
+        self.all_zb = np.random.randn(self.num_indv, self.num_random_vec)
+        if self.use_cov:
+            self.all_zb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
 
-        self.H = np.zeros((self.num_bin, self.num_jack + 1))
-        self.Z = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
-        self.U = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
-        self.V = np.zeros((self.num_bin, self.num_jack + 1))
+        self.XXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
+        self.yXXy = np.zeros((self.num_bin, self.num_jack + 1))
         self.cov_H = np.zeros((self.num_bin, self.num_jack + 1)) if self.use_cov else None
         self.cov_Z_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
         self.cov_Z_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
@@ -91,10 +89,6 @@ class RHE:
         self.M[self.num_jack] = len_bin
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.streaming = streaming
-
-        print(self.device)
-
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -175,7 +169,7 @@ class RHE:
         
     def _get_jacknife_subsample(self, jack_index: int) -> np.ndarray:
         """
-        Get the jacknife subsample
+        Get the jacknife subsample (imputed)
         """
 
         step_size = self.num_snp // self.num_jack
@@ -187,9 +181,10 @@ class RHE:
          # read bed file
         try:
             subsample = self.geno_bed.read(index=np.s_[::1,start:end])
+            subsample = impute_geno(subsample, simulate_geno=True)
         except Exception as e:
             raise Exception(f"Error occurred: {e}")
-        
+
         excluded_columns = list(set(range(self.num_snp)) - set(range(start, end)))
         return subsample, excluded_columns
 
@@ -219,17 +214,19 @@ class RHE:
         """
         Project y onto the column space of the covariance matrix and compute the residual
         """
-        cov_matrix_aug = np.linalg.inv(cov_matrix.T @ cov_matrix)
-        return pheno - cov_matrix @ cov_matrix_aug @ cov_matrix.T @ pheno
+        Q = np.linalg.inv(cov_matrix.T @ cov_matrix)
+        return pheno - cov_matrix @ Q @ cov_matrix.T @ pheno
         
     def pre_compute(self, verbose: bool=False):
         """
         Compute U and V 
         """
-        random_vecs = [np.random.randn(self.num_indv, 1) for _ in range(self.num_random_vec)]
-        if self.use_cov:
-            for b in range(self.num_random_vec):
-                random_vecs[b] = self.cov_matrix @ (self.cov_matrix_aug @ self.cov_matrix.T @ random_vecs[b])
+        
+        Z = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
+        cov_Z_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
+        cov_Z_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
+
+        H = np.zeros((self.num_bin, self.num_jack + 1))
 
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
@@ -238,42 +235,54 @@ class RHE:
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno.gen
+                print(X_kj)
+                # X_kj = impute_geno(X_kj, simulate_geno=True)
                 self.M[j][k] = self.M[self.num_jack][k] - geno.num_snp # store the dimension with the corresponding block
-                begin = time.time()
-                X_kj = impute_geno(X_kj, simulate_geno=True)
-                end = time.time()
-                if verbose:
-                    print(f"impute time: {end - begin}")
-                for b, random_vec in enumerate(random_vecs):
+                for b in range(self.num_random_vec):
                     start = time.time()       
-                    self.Z[k, j, b, :] = (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
+                    random_vec = self.all_zb[:, b].reshape(-1, 1)
+                    Z[k, j, b, :] = (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
                     end = time.time()
                     if verbose:
                         print(f"XXz time: {end - start}")
                     
                 if self.use_cov:
                     for b in range(self.num_random_vec):
-                        self.cov_Z_1[k, j, b, :] = (self.cov_matrix @ (self.cov_matrix_aug @ (self.cov_matrix.T @ self.Z[k][j][b]))).flatten()
-                        self.cov_Z_2[k, j, b, :] = X_kj @ X_kj.T @ random_vecs[b].flatten()
+                        random_vec = self.all_zb[:, b].reshape(-1, 1)
+                        cov_Z_1[k, j, b, :] = self.mat_mul(self.cov_matrix, self.mat_mul(self.Q, self.mat_mul(self.cov_matrix.T, Z[k][j][b]))).flatten()
+                        cov_Z_2[k, j, b, :] = self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec)).flatten()
 
                 pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
                 v = self.mat_mul(X_kj.T, pheno)
-                self.H[k][j] = v.T @ v
-
-                if self.streaming:
-                    del X_kj
+                H[k][j] = self.mat_mul(v.T, v)
+                del X_kj
             
         
-        for k in range(self.num_bin):
-            for j in range(self.num_jack):
-                for b, random_vec in enumerate(random_vecs):
-                    self.U[k][self.num_jack][b] += self.Z[k][j][b]
-                self.V[k][self.num_jack] += self.H[k][j]
-            
-            for j in range(self.num_jack):
-                for b, random_vec in enumerate(random_vecs):
-                    self.U[k][j][b] = self.U[k][self.num_jack][b] - self.Z[k][j][b]
-                self.V[k][j] = self.V[k][self.num_jack] - self.H[k][j]
+        if not self.use_cov:
+            for k in range(self.num_bin):
+                for j in range(self.num_jack):
+                    for b in range (self.num_random_vec):
+                        self.XXz[k][self.num_jack][b] += Z[k][j][b]
+                    self.yXXy[k][self.num_jack] += H[k][j]
+                
+                for j in range(self.num_jack):
+                    for b in range (self.num_random_vec):
+                        self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - Z[k][j][b]
+                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - H[k][j]
+        else:
+            for k in range(self.num_bin):
+                for j in range(self.num_jack):
+                    for b in range (self.num_random_vec):
+                        self.UXXz[k][self.num_jack][b] += cov_Z_1[k][j][b]
+                        self.XXUz[k][self.num_jack][b] += cov_Z_2[k][j][b]
+                    self.yXXy[k][self.num_jack] += H[k][j]
+                
+                for j in range(self.num_jack):
+                    for b in range (self.num_random_vec):
+                        self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - cov_Z_1[k][j][b]
+                        self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - cov_Z_2[k][j][b]
+                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - H[k][j]
+
      
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
         """
@@ -304,32 +313,35 @@ class RHE:
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
                     for b in range(self.num_random_vec):
-                        U_kbj_1 = self.U[k_k][j][b]
-                        U_kbj_2 = self.U[k_l][j][b]
-                        T[k_k, k_l] += self.mat_mul(U_kbj_1.T, U_kbj_2)
-                        if self.use_cov:
-                            CU_1_kbj_1 = self.cov_Z_1[k_k][j][b]
-                            CU_2_kbj_1 = self.cov_Z_2[k_l][j][b]
-                            T[k_k, k_l] += CU_1_kbj_1 @ CU_2_kbj_1 - 2 * U_kbj_1 @ CU_2_kbj_1.T 
+                        B1 = self.XXz[k_k][j][b]
+                        B2 = self.XXz[k_l][j][b]
+                        if not self.use_cov:
+                            T[k_k, k_l] += np.sum(B1*B2)
+                        else:
+                            trkij_res1 = np.sum((self.cov_matrix @ (self.Q @ (self.cov_matrix.T @ B1)) * B2).sum(axis=0))
+                            B1 = self.XXUz[k_k][j][b]
+                            B2 = self.UXXz[k_l][j][b]
+                            trkij_res2 = np.sum(B1 * B2)
+                            T[k_k, k_l] += (trkij_res2 - trkij_res1)
+
 
                     T[k_k, k_l] /= (self.num_random_vec)
                     T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
 
             for k in range(self.num_bin):
                 M_k = self.M[j][k]
-                # M_k = geno.num_snp
-                # Xi = impute_geno(geno.gen).copy()/np.sqrt(M_k)
-                # T[k, self.num_bin] = np.trace(Xi@Xi.T) if M_k != 0 else 0
-                # T[self.num_bin, k] = np.trace(Xi@Xi.T) if M_k != 0 else 0
                 T[k, self.num_bin] = self.num_indv
                 T[self.num_bin, k] = self.num_indv
 
                 if self.use_cov:
-                    # TODO
-                    pass
+                    b_trK_res = 0
+                    for b in range(self.num_random_vec):
+                        b_trK_res = b_trK_res + np.sum(self.all_zb[:, b:(b+1)].T @ self.XXz[k_k][j])
+                    T[k, self.num_bin] -= 1/(k * M_k) * b_trK_res
+                    T[self.num_bin, k] -= 1/(k * M_k) * b_trK_res
+                    
                         
-                q[k] = self.V[(k, j)]
-                q[k] = q[k] / M_k if M_k != 0 else 0
+                q[k] = self.yXXy[(k, j)] / M_k if M_k != 0 else 0
             
             
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
@@ -490,6 +502,6 @@ class RHE:
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
     def get_yxxy(self):
-        if not self.V:  
+        if not self.yXXy:  
             raise ValueError("yxxy has not been computed yet")
-        return self.V
+        return self.yXXy
