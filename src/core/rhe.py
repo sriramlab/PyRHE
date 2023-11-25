@@ -6,12 +6,6 @@ from bed_reader import open_bed
 from src.util.math import *
 from src.util.file_processing import *
 
-
-class GenoChunk:
-    def __init__(self):
-        self.gen = None 
-        self.num_snp = 0 
-
 class RHE:
     def __init__(
         self,
@@ -121,7 +115,7 @@ class RHE:
             betas = []
 
             for i, data in enumerate(all_gen):
-                X = data.gen
+                X = data
                 M = X.shape[1]
                 sigma = sigma_list[i]
                 beta = np.random.multivariate_normal([0] * M, np.diag(np.full(M, sigma / M)))
@@ -151,11 +145,11 @@ class RHE:
         """
 
         bin_to_snp_indices = self._bin_to_snp(annot)
-        all_gen = [GenoChunk() for _ in range(len(bin_to_snp_indices))]
-        for i, data in enumerate(all_gen):
-            data.num_snp = len(bin_to_snp_indices[i])
-            data.gen = geno[:, bin_to_snp_indices[i]]
-        
+
+        all_gen = []
+        for i in range(self.num_bin):
+            all_gen.append(geno[:, bin_to_snp_indices[i]])
+
         return all_gen
 
         
@@ -227,9 +221,8 @@ class RHE:
             all_gen = self.partition_bins(subsample, sub_annot)
                     
             for k, geno in enumerate(all_gen):
-                X_kj = geno.gen
-                print(X_kj)
-                self.M[j][k] = self.M[self.num_jack][k] - geno.num_snp # store the dimension with the corresponding block
+                X_kj = geno
+                self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     start = time.time()       
                     random_vec = self.all_zb[:, b].reshape(-1, 1)
