@@ -63,7 +63,7 @@ class RHE:
             self.Q = None
         else:
             self.use_cov = True
-            self.cov_matrix, _ = read_cov(cov_file)
+            self.cov_matrix = read_cov(cov_file)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
         
         # all_zb
@@ -126,6 +126,13 @@ class RHE:
             y +=  sigma_epsilon 
 
         self.pheno = y
+
+        if self.use_cov:
+            Ncov = self.cov_matrix.shape[1]
+            print(Ncov)
+
+            # Assume fixed gamma
+            y += self.cov_matrix @ np.ones((Ncov, 1))
 
         return y, betas
 
@@ -228,8 +235,8 @@ class RHE:
                     random_vec = self.all_zb[:, b].reshape(-1, 1)
                     Z[k, j, b, :] = (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
                     end = time.time()
-                    if verbose:
-                        print(f"XXz time: {end - start}")
+                    # if verbose:
+                    #     print(f"XXz time: {end - start}")
                     
                 if self.use_cov:
                     for b in range(self.num_random_vec):
@@ -243,18 +250,19 @@ class RHE:
                 del X_kj
             
         
-        if not self.use_cov:
-            for k in range(self.num_bin):
-                for j in range(self.num_jack):
-                    for b in range (self.num_random_vec):
-                        self.XXz[k][self.num_jack][b] += Z[k][j][b]
-                    self.yXXy[k][self.num_jack] += H[k][j]
-                
-                for j in range(self.num_jack):
-                    for b in range (self.num_random_vec):
-                        self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - Z[k][j][b]
-                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - H[k][j]
-        else:
+        for k in range(self.num_bin):
+            for j in range(self.num_jack):
+                for b in range (self.num_random_vec):
+                    self.XXz[k][self.num_jack][b] += Z[k][j][b]
+                self.yXXy[k][self.num_jack] += H[k][j]
+            
+            for j in range(self.num_jack):
+                for b in range (self.num_random_vec):
+                    self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - Z[k][j][b]
+                self.yXXy[k][j] = self.yXXy[k][self.num_jack] - H[k][j]
+        
+        
+        if self.use_cov:
             for k in range(self.num_bin):
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
@@ -266,7 +274,6 @@ class RHE:
                     for b in range (self.num_random_vec):
                         self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - cov_Z_1[k][j][b]
                         self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - cov_Z_2[k][j][b]
-                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - H[k][j]
 
      
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
@@ -297,17 +304,22 @@ class RHE:
                 for k_l in range(self.num_bin):
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
-                    for b in range(self.num_random_vec):
-                        B1 = self.XXz[k_k][j][b]
-                        B2 = self.XXz[k_l][j][b]
-                        if not self.use_cov:
-                            T[k_k, k_l] += np.sum(B1*B2)
-                        else:
-                            trkij_res1 = np.sum((self.cov_matrix @ (self.Q @ (self.cov_matrix.T @ B1)) * B2).sum(axis=0))
-                            B1 = self.XXUz[k_k][j][b]
-                            B2 = self.UXXz[k_l][j][b]
-                            trkij_res2 = np.sum(B1 * B2)
-                            T[k_k, k_l] += (trkij_res2 - trkij_res1)
+                    B1 = self.XXz[k_k][j]
+                    B2 = self.XXz[k_l][j]
+                    if not self.use_cov:
+                        T[k_k, k_l] += np.sum(np.multiply(B1, B2))
+                    else:
+                        # print(B1.shape)
+                        # trkij_res1 = np.sum((self.cov_matrix @ (self.Q @ (self.cov_matrix.T @ B1)) * B2).sum(axis=0))
+                        h1 = self.cov_matrix.T @ B1
+                        h2 = self.Q @ h1
+                        h3 = self.cov_matrix @ h2
+                        trkij_res1 = np.sum(np.multiply(h3, B2))
+
+                        B1 = self.XXUz[k_k][j][b]
+                        B2 = self.UXXz[k_l][j][b]
+                        trkij_res2 = np.sum(B1 * B2)
+                        T[k_k, k_l] += (trkij_res2 - trkij_res1)
 
 
                     T[k_k, k_l] /= (self.num_random_vec)
@@ -321,7 +333,7 @@ class RHE:
                 if self.use_cov:
                     b_trK_res = 0
                     for b in range(self.num_random_vec):
-                        b_trK_res = b_trK_res + np.sum(self.all_zb[:, b:(b+1)].T @ self.XXz[k_k][j])
+                        b_trK_res = b_trK_res + np.sum(self.all_zb[:, b:(b+1)].T @ self.XXz[k][j].T)
                     T[k, self.num_bin] -= 1/(k * M_k) * b_trK_res
                     T[self.num_bin, k] -= 1/(k * M_k) * b_trK_res
                     
@@ -442,7 +454,7 @@ class RHE:
                 h_SNP_2 = h2_jack[-1]
                 M_k = self.M[j][k]
                 M = sum(self.M[j])
-                e_k = (hk_2 / h_SNP_2) / (M_k + M) if M_k + M != 0 else 0
+                e_k = (hk_2 / h_SNP_2) / (M_k / M) if (M != 0 and M_k != 0) else 0
                 enrichment_jack_bin.append(e_k)
         
             enrichment.append(enrichment_jack_bin)

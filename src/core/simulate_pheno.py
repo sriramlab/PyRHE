@@ -12,6 +12,7 @@ def simulate_pheno(pheno_file, cov_file, output_file):
 
     y = read_pheno(pheno_file)
     cov = read_cov(std=True, filename=cov_file)
+    print(cov.shape[1])
     Ncov = cov.shape[1]
     y_new = y + cov @ np.ones((Ncov, 1))
 
