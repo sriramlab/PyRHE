@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 def read_bim(filename):
     try:
@@ -107,63 +108,22 @@ def generate_annot(filename, num_snp, num_bin):
         raise 
 
 
-def read_cov(std, Nind, filename, covname=""):
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-    
-    header = lines[0].split()
-    cov_indices = [i for i, b in enumerate(header) if b not in ["FID", "IID"]]
-    
-    covNum = len(cov_indices)
-    if covname:
-        covIndex = header.index(covname)
-    else:
-        covIndex = 0
-    
-    cov_sum = np.zeros(covNum)
-    if covname == "":
-        covariate = np.zeros((Nind, covNum))
-        print(f"Read in {covNum} Covariates..")
-    else:
-        covariate = np.zeros((Nind, 1))
-        print(f"Read in covariate {covname}")
-    
-    missing = [[] for _ in range(covNum)]
-    for j, line in enumerate(lines[1:]):
-        data = line.split()
-        for k, index in enumerate(cov_indices):
-            temp = data[index]
-            if temp == "NA" or float(temp) == -9:
-                missing[k].append(j)
-                continue
-            cur = float(temp)
-            cov_sum[k] += cur
-            if covname == "":
-                covariate[j][k] = cur
-            elif k == covIndex:
-                covariate[j][0] = cur
+def read_cov(filename, covname="", std: bool=True):
+    df = pd.read_csv(filename, delim_whitespace=True)
 
-    # compute cov mean and impute
-    for a in range(covNum):
-        missing_num = len(missing[a])
-        cov_sum[a] /= (Nind - missing_num)
-        
-        for b in missing[a]:
-            if covname == "":
-                covariate[b][a] = cov_sum[a]
-            elif a == covIndex:
-                covariate[b][0] = cov_sum[a]
+    if 'FID' in df.columns:
+        df.drop('FID', axis=1, inplace=True)
+    if 'IID' in df.columns:
+        df.drop('IID', axis=1, inplace=True)
+
+    if covname:
+        df = df[[covname]]
+
+    df.replace(['NA', -9], np.nan, inplace=True)
+
+    df.fillna(df.mean(), inplace=True)
 
     if std:
-        cov_std = np.zeros(covNum)
-        sum_ = np.sum(covariate, axis=0)
-        sum2 = np.sum(covariate**2, axis=0)
-        for b in range(covNum):
-            cov_std[b] = sum2[b] + Nind * cov_sum[b]**2 - 2 * cov_sum[b] * sum_[b]
-            cov_std[b] = np.sqrt((Nind - 1) / cov_std[b])
-            scalar = cov_std[b]
-            for j in range(Nind):
-                covariate[j][b] -= cov_sum[b]
-                covariate[j][b] *= scalar
+        df = (df - df.mean()) / df.std(ddof=1)
 
-    return covariate, covNum
+    return df.values

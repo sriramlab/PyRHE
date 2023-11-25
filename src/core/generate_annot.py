@@ -30,7 +30,7 @@ def create_annot_file(geno_file, num_bin, filename):
             f.write(' '.join(str(val) for val in row) + '\n')
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='finetuning with LoRA')
+    parser = argparse.ArgumentParser(description='generate annot')
     parser.add_argument('--geno', '-g', type=str, default=None, help='path of the genotype file')
     parser.add_argument('--num_bin', '-b', type=int, default=1, help='number of bins')
     parser.add_argument('--output_dir', '-o', type=str, default='/u/home/j/jiayini/RHE_project/data/annot', help='directory to store the generated annot')
