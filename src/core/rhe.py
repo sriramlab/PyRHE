@@ -233,11 +233,6 @@ class RHE:
         return self.mat_mul(v.T, v)
 
     def pre_compute(self):
-        Z = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
-        cov_Z_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
-        cov_Z_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
-
-        H = np.zeros((self.num_bin, self.num_jack + 1))
 
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
@@ -249,40 +244,40 @@ class RHE:
                 X_kj = geno
                 self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
-                    Z[k, j, b, :] = self._compute_XXz(b, X_kj)
+                    self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
                     
                 if self.use_cov:
                     for b in range(self.num_random_vec):
-                        cov_Z_1[k, j, b, :] = self._compute_UXXz(b, X_kj, Z[k][j][b])
-                        cov_Z_2[k, j, b, :] = self._compute_XXUz(b, X_kj)
+                        self.UXXz[k, j, b, :] = self._compute_UXXz(b, X_kj, Z[k][j][b])
+                        self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
 
-                H[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+                self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
                 del X_kj
             
         
         for k in range(self.num_bin):
             for j in range(self.num_jack):
                 for b in range (self.num_random_vec):
-                    self.XXz[k][self.num_jack][b] += Z[k][j][b]
-                self.yXXy[k][self.num_jack] += H[k][j]
+                    self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
+                self.yXXy[k][self.num_jack] += self.yXXy[k][j]
             
             for j in range(self.num_jack):
                 for b in range (self.num_random_vec):
-                    self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - Z[k][j][b]
-                self.yXXy[k][j] = self.yXXy[k][self.num_jack] - H[k][j]
+                    self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
+                self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
         
         
         if self.use_cov:
             for k in range(self.num_bin):
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
-                        self.UXXz[k][self.num_jack][b] += cov_Z_1[k][j][b]
-                        self.XXUz[k][self.num_jack][b] += cov_Z_2[k][j][b]
+                        self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
+                        self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
                                         
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
-                        self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - cov_Z_1[k][j][b]
-                        self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - cov_Z_2[k][j][b]
+                        self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
+                        self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
      
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
