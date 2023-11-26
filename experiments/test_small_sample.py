@@ -22,7 +22,7 @@ geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_
 rhe = StreamingRHE(
     geno_file=geno_path,
     annot_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/annot.txt',
-    # cov_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/small_covariate_file.cov',
+    cov_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/small_covariate_file.cov',
     num_bin=8,
     num_jack=2,
 )

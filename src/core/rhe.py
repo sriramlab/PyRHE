@@ -242,11 +242,6 @@ class RHE:
                 self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
-                
-                if k == 0 and j == 0:
-                    print("Xkjjjjj")
-                    print(X_kj)
-                    # print(self.XXz[k][j])
                     
                 if self.use_cov:
                     for b in range(self.num_random_vec):
@@ -267,13 +262,6 @@ class RHE:
                 for b in range (self.num_random_vec):
                     self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
                 self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
-            
-            # print("Sum")
-            # print(self.XXz[0][self.num_jack])      
-            # print("XXZ 00 now")
-            # print(self.XXz[0][0])      
-
-        
         
         if self.use_cov:
             for k in range(self.num_bin):
@@ -316,9 +304,6 @@ class RHE:
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
                     B1 = self.XXz[k_k][j]
-                    # if k_k == 0 and k_l == 0 and j == 0:
-                    #     print(">>>>>>")
-                    #     print(self.XXz[k_k][j])
                     B2 = self.XXz[k_l][j]
                     if not self.use_cov:
                         T[k_k, k_l] += np.sum(B1 * B2)
