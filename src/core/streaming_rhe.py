@@ -67,7 +67,7 @@ class StreamingRHE(RHE):
                 self.yXXy_sum[k][0] += yXXy_kj
 
                 del X_kj
-
+        
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
         """
         Actual RHE estimation for sigma^2
@@ -83,30 +83,41 @@ class StreamingRHE(RHE):
             sigma^2 for the whole genotype matrix [sigma_1^2 sigma_2^2 ... sigma_e^2]
 
         """
-
         sigma_ests = []
 
         for j in range(self.num_jack + 1):
             print(f"Estimate for jackknife sample {j}")
 
+            if j != self.num_jack:
+                subsample, sub_annot = self._get_jacknife_subsample(j)
+                subsample = impute_geno(subsample, simulate_geno=True)
+                all_gen = self.partition_bins(subsample, sub_annot)
+
             T = np.zeros((self.num_bin+1, self.num_bin+1))
             q = np.zeros((self.num_bin+1, 1))
 
-            for k_k, X_kkj in enumerate(self.all_gen):
-                for k_l, X_klj in enumerate(self.all_gen):
+            for k_k, X_kkj in enumerate(all_gen):
+                for k_l, X_klj in enumerate(all_gen):
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
 
                     B1 = np.zeros((self.num_random_vec, self.num_indv))
                     B2 = np.zeros((self.num_random_vec, self.num_indv))
                     for b in range(self.num_random_vec):
-                        XXz_kkjb = self._compute_XXz(b, X_kkj)
-                        jack_XXz_kkjb = self.XXz_sum[k_k][0][b] - XXz_kkjb
-                        B1[b, :] = jack_XXz_kkjb
-                        XXz_kljb = self._compute_XXz(b, X_klj)
-                        jack_XXz_kljb = self.XXz_sum[k_l][0][b] - XXz_kljb
-                        B2[b, :] = jack_XXz_kljb
-    
+                        if j != self.num_jack:
+                            XXz_kkjb = self._compute_XXz(b, X_kkj)
+                            jack_XXz_kkjb = self.XXz_sum[k_k][0][b] - XXz_kkjb
+                            B1[b, :] = jack_XXz_kkjb
+                        else:
+                            B1[b, :] = self.XXz_sum[k_k][0][b]
+                        
+                        if j != self.num_jack:
+                            XXz_kljb = self._compute_XXz(b, X_klj)
+                            jack_XXz_kljb = self.XXz_sum[k_l][0][b] - XXz_kljb
+                            B2[b, :] = jack_XXz_kljb
+                        else:
+                            B2[b, :] = self.XXz_sum[k_l][0][b]          
+                    
                     if not self.use_cov:
                         T[k_k, k_l] += np.sum(B1 * B2)
 
@@ -121,12 +132,19 @@ class StreamingRHE(RHE):
                         B2 = np.zeros((self.num_random_vec, self.num_indv))
 
                         for b in range(self.num_random_vec):
-                            XXUz_kkjb = self._compute_XXUz(b, X_kkj)
-                            jack_XXUz_kkjb = self.XXUz_sum[k_k][0][b] - XXUz_kkjb
-                            B1[b, :] = jack_XXUz_kkjb
-                            UXXz_kljb = self._compute_UXXz(b, X_klj)
-                            jack_UXXz_kljb = self.XXUz_sum[k_k][0][b] - UXXz_kljb
-                            B2[b, :] = jack_UXXz_kljb
+                            if j != self.num_jack:
+                                XXUz_kkjb = self._compute_XXUz(b, X_kkj)
+                                jack_XXUz_kkjb = self.XXUz_sum[k_k][0][b] - XXUz_kkjb
+                                B1[b, :] = jack_XXUz_kkjb
+                            else:
+                                B1[b, :] = self.XXUz_sum[k_k][0][b]
+
+                            if j != self.num_jack:
+                                UXXz_kljb = self._compute_UXXz(b, X_klj)
+                                jack_UXXz_kljb = self.XXUz_sum[k_k][0][b] - UXXz_kljb
+                                B2[b, :] = jack_UXXz_kljb 
+                            else:
+                                B2[b, :] = self.XXUz_sum[k_k][0][b]
 
                         trkij_res2 = np.sum(B1 * B2)
                         T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
@@ -134,8 +152,9 @@ class StreamingRHE(RHE):
 
                     T[k_k, k_l] /= (self.num_random_vec)
                     T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
+            
 
-            for k, X_kj in enumerate(self.all_gen):
+            for k, X_kj in enumerate(all_gen):
                 M_k = self.M[j][k]
 
                 if not self.use_cov:
@@ -145,9 +164,12 @@ class StreamingRHE(RHE):
                 else:
                     B1 = np.zeros((self.num_random_vec, self.num_indv))
                     for b in range(self.num_random_vec):
-                        XXz_kjb = self._compute_XXz(b, X_kj)
-                        jack_XXz_kkjb = self.XXz_sum[k][0][b] - XXz_kjb
-                        B1[:, b] = jack_XXz_kkjb
+                        if j != self.num_jack:
+                            XXz_kjb = self._compute_XXz(b, X_kj)
+                            jack_XXz_kkjb = self.XXz_sum[k][0][b] - XXz_kjb
+                            B1[:, b] = jack_XXz_kkjb 
+                        else:
+                            B1[:, b] = self.XXz_sum[k][0][b]
 
                     C1 = self.all_Uzb
                     tk_res = np.sum(B1 * C1.T)
@@ -156,10 +178,12 @@ class StreamingRHE(RHE):
                     T[k, self.num_bin] = self.num_indv - tk_res
                     T[self.num_bin, k] = self.num_indv - tk_res
 
-
-                yXXy_kj = self._compute_yXXy(X_kj, y=self.pheno)
-                jack_yXXy_kj = self.yXXy_sum[k][0] - yXXy_kj
-                q[k] = jack_yXXy_kj / M_k if M_k != 0 else 0
+                if j != self.num_jack:
+                    yXXy_kj = self._compute_yXXy(X_kj, y=self.pheno)
+                    jack_yXXy_kj = self.yXXy_sum[k][0] - yXXy_kj
+                    q[k] = jack_yXXy_kj / M_k if M_k != 0 else 0
+                else:
+                    q[k] = self.yXXy_sum[k][0] / M_k if M_k != 0 else 0
             
             
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
