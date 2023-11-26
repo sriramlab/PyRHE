@@ -1,13 +1,8 @@
 import numpy as np
 import pandas as pd
 import argparse
-from src.core.rhe import RHE
-from bed_reader import open_bed
-from src.util.math import *
 
-
-
-def rhe_mc(y, X, annot, k=10, jackbin=2, cov=None, outfile=""):
+def rhe_mc(y, X, annot, k=10, jackbin=100, cov=None, outfile=""):
     use_cov = (cov is not None)
     N, M = X.shape
     Nbin = annot.shape[1]
@@ -17,7 +12,7 @@ def rhe_mc(y, X, annot, k=10, jackbin=2, cov=None, outfile=""):
     
     step_size, step_size_rem = (M // jackbin), (M % jackbin)
     ## standardize phenotype
-    # y = y - np.mean(y)
+    y = y - np.mean(y)
     ## project y onto the residual of cov
     if use_cov:
         Q = np.linalg.inv(cov.T @ cov)
@@ -38,13 +33,12 @@ def rhe_mc(y, X, annot, k=10, jackbin=2, cov=None, outfile=""):
         M_list.append(M_cur)
     
     
-    np.random.seed(0)
+    np.random.seed(1)
     all_zb = np.random.normal(size=(N, k))
     if use_cov:
         all_Uzb = np.zeros((N, k))
         for num_vec in range(k):
             all_Uzb[:, num_vec] = cov @ (Q @ (cov.T @ all_zb[:, num_vec]))
-
     
     M_mat = np.zeros((jackbin+1, Nbin))
     M_mat[jackbin] = M_list
@@ -70,13 +64,9 @@ def rhe_mc(y, X, annot, k=10, jackbin=2, cov=None, outfile=""):
         for num_bin in range(Nbin):
             X_block_k = X_block[:, np.where(annot_block[:, num_bin] == 1)[0]]
             M_mat[num_jackbin, num_bin] = X_block_k.shape[1]
-            # means = X_block_k.mean(axis=0)
-            # stds = 1/np.sqrt(means*(1-0.5*means))
-            # Z_block_k = (X_block_k - means) * stds
-
-            # print(Z_block_k)
-            
-            Z_block_k = impute_geno(X_block_k)
+            means = X_block_k.mean(axis=0)
+            stds = 1/np.sqrt(means*(1-0.5*means))
+            Z_block_k = (X_block_k - means) * stds
             XXz_k = np.zeros((N, k))
             for num_vec in range(k):
                 XXz_k[:, num_vec] = Z_block_k @ (Z_block_k.T @ all_zb[:, num_vec]) ## normalize later
@@ -85,7 +75,6 @@ def rhe_mc(y, X, annot, k=10, jackbin=2, cov=None, outfile=""):
                 for num_vec in range(k):
                     UXXz_k, XXUz_k = np.zeros((N, k)), np.zeros((N, k))
                     for num_vec in range(k):
-
                         UXXz_k[:, num_vec] = cov @ (Q @ (cov.T @ XXz_k[:, num_vec]))
                         XXUz_k[:, num_vec] = Z_block_k @ (Z_block_k.T @ all_Uzb[:, num_vec]) ## normalize later
                 UXXz[num_jackbin, num_bin] = UXXz_k
@@ -117,9 +106,6 @@ def rhe_mc(y, X, annot, k=10, jackbin=2, cov=None, outfile=""):
             yVXXVy[num_jackbin] = yVXXVy_sum - yVXXVy[num_jackbin]
         
         UXXz[jackbin], XXUz[jackbin], yVXXVy[jackbin] = UXXz_sum, XXUz_sum, yVXXVy_sum
-    
-
-    # print(UXXz_sum[0])
     
 
     jack = np.zeros((jackbin, Nbin+1))
@@ -167,9 +153,9 @@ def rhe_mc(y, X, annot, k=10, jackbin=2, cov=None, outfile=""):
 
         norm_eq_b = np.concatenate([c_yKy, yy])
         
-        # if num_jackbin == jackbin:
-        #     print(f"X_l:\n {norm_eq_A}")
-        #     print(f"Y_l:\n {norm_eq_b}")
+        if num_jackbin == jackbin:
+            print(f"X_l:\n {norm_eq_A}")
+            print(f"Y_l:\n {norm_eq_b}")
 
         sigma_vec = np.linalg.solve(norm_eq_A, norm_eq_b)
         
@@ -244,32 +230,12 @@ if __name__ == '__main__':
     parser.add_argument('--pheno_file', help='phenotype file')
     parser.add_argument('--cov_file', help='covariate file')
     parser.add_argument('--annot_file', help='annotation file')
-    parser.add_argument('--output_file', default="output.txt", help='output file')
+    parser.add_argument('--output_file', help='output file')
     args = parser.parse_args()
 
-    geno_path = "/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_1"
+    y = np.loadtxt(args.pheno_file, delimiter=' ')
+    X = np.loadtxt(args.geno_file, delimiter=' ')
+    annot = np.loadtxt(args.annot_file, delimiter=' ')
+    # cov = np.loadtxt(args.cov_file, delimiter=' ')
 
-    bed = open_bed(geno_path + ".bed")
-    
-    X = bed.read()
-
-    rhe = RHE(
-        geno_file=geno_path,
-        annot_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/annot.txt',
-        cov_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/small_covariate_file.cov',
-        num_bin=8,
-        num_jack=2,
-        )
-
-    print("Simulating Phenotype...")
-
-    y, _ = rhe.simulate_pheno(sigma_list=[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
-
-    print(y)
-
-    annot = rhe.annot_matrix
-
-    cov = rhe.cov_matrix
-
-
-    rhe_mc(y=y, X=X, annot=annot, cov=cov, outfile=args.output_file)
+    rhe_mc(y=y, X=X, annot=annot, outfile=args.output_file)

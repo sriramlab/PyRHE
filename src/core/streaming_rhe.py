@@ -118,10 +118,9 @@ class StreamingRHE(RHE):
                         else:
                             B2[b, :] = self.XXz_sum[k_l][0][b]          
                     
-                    if not self.use_cov:
-                        T[k_k, k_l] += np.sum(B1 * B2)
+                    T[k_k, k_l] += np.sum(B1 * B2)
 
-                    else:
+                    if self.use_cov:
                         h1 = self.cov_matrix.T @ B1.T
                         h2 = self.Q @ h1
                         h3 = self.cov_matrix @ h2
