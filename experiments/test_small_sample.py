@@ -19,10 +19,10 @@ geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_
     
 # to_bed(plink_bed_file, X)
 
-rhe = StreamingRHE(
+rhe = RHE(
     geno_file=geno_path,
     annot_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/annot.txt',
-    cov_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/small_covariate_file.cov',
+    # cov_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/small_covariate_file.cov',
     num_bin=8,
     num_jack=2,
 )
@@ -30,6 +30,11 @@ rhe = StreamingRHE(
 print("Simulating Phenotype...")
 
 y, _ = rhe.simulate_pheno(sigma_list=[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+
+
+
+
+
 print(y)
 
 rhe()
