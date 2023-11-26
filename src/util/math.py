@@ -2,7 +2,7 @@ import scipy
 import numpy as np
 
 def _simulate_geno_from_random(p_j):
-    np.random.seed(0)
+    np.random.seed(3) # TODO: remove
     rval = np.random.random()
     dist_pj = [(1-p_j)*(1-p_j), 2*p_j*(1-p_j), p_j*p_j]
     

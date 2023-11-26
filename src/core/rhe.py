@@ -50,6 +50,14 @@ class RHE:
 
         self.num_bin, self.annot_matrix, len_bin = read_annot(annot_file, self.num_jack)
 
+        # read pheno file and standardize
+        if pheno_file is not None:
+            self.pheno = read_pheno(pheno_file)
+            self.pheno = self.pheno - np.mean(self.pheno)
+            assert self.num_indv == self.pheno.shape[0]
+        else:
+            self.pheno = None
+
         # read covariance file
         if cov_file is None:
             self.use_cov = False
@@ -60,14 +68,6 @@ class RHE:
             self.cov_matrix = read_cov(cov_file)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
-
-        # read pheno file and standardize
-        if pheno_file is not None:
-            self.pheno = read_pheno(pheno_file)
-            self.pheno = self.pheno - np.mean(self.pheno)
-            assert self.num_indv == self.pheno.shape[0]
-        else:
-            self.pheno = None
         
         # all_zb
         self.all_zb = np.random.randn(self.num_indv, self.num_random_vec)
@@ -87,7 +87,7 @@ class RHE:
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    def simulate_pheno(self, sigma_list: List): # TODO: put outside
+    def simulate_pheno(self, sigma_list: List):
         '''
         Simulate phenotype y from X and sigma_list
         '''
@@ -129,6 +129,8 @@ class RHE:
             
             y +=  sigma_epsilon 
 
+        self.pheno = y
+
         if self.use_cov:
             Ncov = self.cov_matrix.shape[1]
             print(Ncov)
@@ -136,12 +138,8 @@ class RHE:
             # Assume fixed gamma
             y += self.cov_matrix @ np.ones((Ncov, 1))
             # y += self.cov_matrix @ np.full((Ncov, 1), 0.1)
-        
-        self.pheno = y
 
-        # self.pheno = self.pheno - np.mean(self.pheno)
-
-        return self.pheno, betas
+        return y, betas
 
     def _bin_to_snp(self, annot): 
         bin_to_snp_indices = []
@@ -238,12 +236,11 @@ class RHE:
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
             subsample, sub_annot = self._get_jacknife_subsample(j)
-            # subsample = impute_geno(subsample, simulate_geno=True)
+            subsample = impute_geno(subsample, simulate_geno=True)
             all_gen = self.partition_bins(subsample, sub_annot)
                     
             for k, geno in enumerate(all_gen):
                 X_kj = geno
-                X_kj = impute_geno(X_kj, simulate_geno=True)
                 self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
@@ -261,7 +258,7 @@ class RHE:
             for j in range(self.num_jack):
                 for b in range (self.num_random_vec):
                     self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
-                self.yXXy[k][self.num_jack] += self.yXXy[k][j]     
+                self.yXXy[k][self.num_jack] += self.yXXy[k][j]
             
             for j in range(self.num_jack):
                 for b in range (self.num_random_vec):
@@ -279,9 +276,6 @@ class RHE:
                     for b in range (self.num_random_vec):
                         self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
                         self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
-
-        # print(self.UXXz[0, self.num_jack])
-
 
 
      
@@ -309,15 +303,14 @@ class RHE:
             q = np.zeros((self.num_bin+1, 1))
 
             for k_k in range(self.num_bin):
-                for k_l in range(self.num_bin):
+                for k_l in range(self.num_bin): # TODO: optimize 
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
                     B1 = self.XXz[k_k][j]
                     B2 = self.XXz[k_l][j]
-                    if not self.use_cov:
-                        T[k_k, k_l] += np.sum(B1 * B2)
+                    T[k_k, k_l] += np.sum(B1 * B2)
 
-                    else:
+                    if self.use_cov:
                         h1 = self.cov_matrix.T @ B1.T
                         h2 = self.Q @ h1
                         h3 = self.cov_matrix @ h2
