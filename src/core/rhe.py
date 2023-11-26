@@ -38,9 +38,10 @@ class RHE:
         self.num_indv = read_fam(geno_file + ".fam")
         self.num_snp = read_bim(geno_file + ".bim")
 
-        # read pheno file
+        # read pheno file and standardize
         if pheno_file is not None:
             self.pheno = read_pheno(pheno_file)
+            self.pheno = self.pheno - np.mean(self.pheno)
             assert self.num_indv == self.pheno.shape[0]
         else:
             self.pheno = None
@@ -69,7 +70,11 @@ class RHE:
         # all_zb
         self.all_zb = np.random.randn(self.num_indv, self.num_random_vec)
         if self.use_cov:
-            self.all_zb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
+            self.all_Uzb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
+
+        # all_gen
+        self.all_gen = None
+
 
         # XXz
         self.XXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
@@ -105,7 +110,7 @@ class RHE:
                 y += np.random.randn(self.num_snp,1)*np.sqrt(sigma_epsilon) # add the effect sizes
 
         else:
-            all_gen = self.partition_bins(geno=geno, annot=self.annot_matrix)
+            self.all_gen = self.partition_bins(geno=geno, annot=self.annot_matrix)
 
             h = 1 - sum(sigma_list) # residual covariance
             sigma_epsilon = np.random.multivariate_normal([0] * self.num_indv, np.diag(np.full(self.num_indv, h)))
@@ -114,7 +119,7 @@ class RHE:
 
             betas = []
 
-            for i, data in enumerate(all_gen):
+            for i, data in enumerate(self.all_gen):
                 X = data
                 M = X.shape[1]
                 sigma = sigma_list[i]
@@ -133,6 +138,7 @@ class RHE:
 
             # Assume fixed gamma
             y += self.cov_matrix @ np.ones((Ncov, 1))
+            # y += self.cov_matrix @ np.full((Ncov, 1), 0.1)
 
         return y, betas
 
@@ -153,11 +159,11 @@ class RHE:
 
         bin_to_snp_indices = self._bin_to_snp(annot)
 
-        all_gen = []
+        self.all_gen = []
         for i in range(self.num_bin):
-            all_gen.append(geno[:, bin_to_snp_indices[i]])
+            self.all_gen.append(geno[:, bin_to_snp_indices[i]])
 
-        return all_gen
+        return self.all_gen
 
         
     def _get_jacknife_subsample(self, jack_index: int) -> np.ndarray:
@@ -205,16 +211,28 @@ class RHE:
 
     def regress_pheno(self, cov_matrix, pheno):
         """
-        Project y onto the column space of the covariance matrix and compute the residual
+        Project y onto the column space of the covariate matrix and compute the residual
         """
         Q = np.linalg.inv(cov_matrix.T @ cov_matrix)
-        return pheno - cov_matrix @ Q @ cov_matrix.T @ pheno
-        
-    def pre_compute(self, verbose: bool=False):
-        """
-        Compute U and V 
-        """
-        
+        return pheno - cov_matrix @ (Q @ (cov_matrix.T @ pheno))
+    
+    def _compute_XXz(self, b, X_kj):
+        random_vec = self.all_zb[:, b].reshape(-1, 1)
+        return (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
+    
+    def _compute_UXXz(self, XXz_kjb):
+        return self.mat_mul(self.cov_matrix, self.mat_mul(self.Q, self.mat_mul(self.cov_matrix.T, XXz_kjb))).flatten()
+    
+    def _compute_XXUz(self, b, X_kj):
+        random_vec_cov = self.all_Uzb[:, b].reshape(-1, 1)
+        return self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec_cov)).flatten()  
+
+    def _compute_yXXy(self, X_kj, y):
+        pheno = y if not self.use_cov else self.regress_pheno(self.cov_matrix, y)
+        v = self.mat_mul(X_kj.T, pheno)
+        return self.mat_mul(v.T, v)
+
+    def pre_compute(self):
         Z = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
         cov_Z_1 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
         cov_Z_2 = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
@@ -225,28 +243,20 @@ class RHE:
             print(f"Precompute for jackknife sample {j}")
             subsample, sub_annot = self._get_jacknife_subsample(j)
             subsample = impute_geno(subsample, simulate_geno=True)
-            all_gen = self.partition_bins(subsample, sub_annot)
+            self.all_gen = self.partition_bins(subsample, sub_annot)
                     
-            for k, geno in enumerate(all_gen):
+            for k, geno in enumerate(self.all_gen):
                 X_kj = geno
                 self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
-                    start = time.time()       
-                    random_vec = self.all_zb[:, b].reshape(-1, 1)
-                    Z[k, j, b, :] = (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
-                    end = time.time()
-                    # if verbose:
-                    #     print(f"XXz time: {end - start}")
+                    Z[k, j, b, :] = self._compute_XXz(b, X_kj)
                     
                 if self.use_cov:
                     for b in range(self.num_random_vec):
-                        random_vec = self.all_zb[:, b].reshape(-1, 1)
-                        cov_Z_1[k, j, b, :] = self.mat_mul(self.cov_matrix, self.mat_mul(self.Q, self.mat_mul(self.cov_matrix.T, Z[k][j][b]))).flatten()
-                        cov_Z_2[k, j, b, :] = self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec)).flatten()
+                        cov_Z_1[k, j, b, :] = self._compute_UXXz(b, X_kj, Z[k][j][b])
+                        cov_Z_2[k, j, b, :] = self._compute_XXUz(b, X_kj)
 
-                pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
-                v = self.mat_mul(X_kj.T, pheno)
-                H[k][j] = self.mat_mul(v.T, v)
+                H[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
                 del X_kj
             
         
@@ -268,8 +278,7 @@ class RHE:
                     for b in range (self.num_random_vec):
                         self.UXXz[k][self.num_jack][b] += cov_Z_1[k][j][b]
                         self.XXUz[k][self.num_jack][b] += cov_Z_2[k][j][b]
-                    self.yXXy[k][self.num_jack] += H[k][j]
-                
+                                        
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
                         self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - cov_Z_1[k][j][b]
@@ -307,19 +316,19 @@ class RHE:
                     B1 = self.XXz[k_k][j]
                     B2 = self.XXz[k_l][j]
                     if not self.use_cov:
-                        T[k_k, k_l] += np.sum(np.multiply(B1, B2))
+                        T[k_k, k_l] += np.sum(B1 * B2)
+
                     else:
-                        # print(B1.shape)
-                        # trkij_res1 = np.sum((self.cov_matrix @ (self.Q @ (self.cov_matrix.T @ B1)) * B2).sum(axis=0))
-                        h1 = self.cov_matrix.T @ B1
+                        h1 = self.cov_matrix.T @ B1.T
                         h2 = self.Q @ h1
                         h3 = self.cov_matrix @ h2
-                        trkij_res1 = np.sum(np.multiply(h3, B2))
+                        trkij_res1 = np.sum(h3.T * B2)
 
-                        B1 = self.XXUz[k_k][j][b]
-                        B2 = self.UXXz[k_l][j][b]
+                        B1 = self.XXUz[k_k][j]
+                        B2 = self.UXXz[k_l][j]
                         trkij_res2 = np.sum(B1 * B2)
-                        T[k_k, k_l] += (trkij_res2 - trkij_res1)
+                    
+                        T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
 
 
                     T[k_k, k_l] /= (self.num_random_vec)
@@ -327,17 +336,20 @@ class RHE:
 
             for k in range(self.num_bin):
                 M_k = self.M[j][k]
-                T[k, self.num_bin] = self.num_indv
-                T[self.num_bin, k] = self.num_indv
 
-                if self.use_cov:
-                    b_trK_res = 0
-                    for b in range(self.num_random_vec):
-                        b_trK_res = b_trK_res + np.sum(self.all_zb[:, b:(b+1)].T @ self.XXz[k][j].T)
-                    T[k, self.num_bin] -= 1/(k * M_k) * b_trK_res
-                    T[self.num_bin, k] -= 1/(k * M_k) * b_trK_res
-                    
-                        
+                if not self.use_cov:
+                    T[k, self.num_bin] = self.num_indv
+                    T[self.num_bin, k] = self.num_indv
+
+                else:
+                    B1 = self.XXz[k][j]
+                    C1 = self.all_Uzb
+                    tk_res = np.sum(B1 * C1.T)
+                    tk_res = 1/(self.num_random_vec * M_k) * tk_res
+
+                    T[k, self.num_bin] = self.num_indv - tk_res
+                    T[self.num_bin, k] = self.num_indv - tk_res
+
                 q[k] = self.yXXy[(k, j)] / M_k if M_k != 0 else 0
             
             
@@ -470,7 +482,7 @@ class RHE:
         whole RHE process for printing etc
         """
 
-        self.pre_compute(verbose=True)
+        self.pre_compute()
 
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
 

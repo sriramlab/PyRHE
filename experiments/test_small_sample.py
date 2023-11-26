@@ -2,6 +2,7 @@
 import sys
 sys.path.insert(0, '/u/home/j/jiayini/project-sriram/RHE_project')
 from src.core.rhe import RHE
+from src.core.streaming_rhe import StreamingRHE
 geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_1"
 
 # X = np.array([
@@ -18,10 +19,10 @@ geno_path="/u/home/j/jiayini/project-sriram/RHE_project/data/simple/actual_geno_
     
 # to_bed(plink_bed_file, X)
 
-rhe = RHE(
+rhe = StreamingRHE(
     geno_file=geno_path,
     annot_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/annot.txt',
-    cov_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/small_covariate_file.cov',
+    # cov_file='/u/home/j/jiayini/project-sriram/RHE_project/data/simple/small_covariate_file.cov',
     num_bin=8,
     num_jack=2,
 )

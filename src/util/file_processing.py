@@ -108,7 +108,7 @@ def generate_annot(filename, num_snp, num_bin):
         raise 
 
 
-def read_cov(filename, covname="", std: bool=True):
+def read_cov(filename, covname="", std: bool=False):
     df = pd.read_csv(filename, delim_whitespace=True)
 
     if 'FID' in df.columns:

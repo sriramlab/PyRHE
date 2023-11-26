@@ -15,7 +15,6 @@ def main(args):
         num_jack=args.num_block,
         num_bin=args.num_bin,
         num_random_vec=args.num_vec,
-        streaming=not args.streaming
     )
 
     # RHE
