@@ -8,14 +8,27 @@ def main(args):
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
     
     print(f"processing {pheno_file}")
-    rhe = RHE(
-        geno_file=args.geno,
-        annot_file=annot_path,
-        pheno_file=pheno_file,
-        num_jack=args.num_block,
-        num_bin=args.num_bin,
-        num_random_vec=args.num_vec,
-    )
+    if args.streaming:
+        rhe = RHE(
+            geno_file=args.geno,
+            annot_file=annot_path,
+            pheno_file=pheno_file,
+            cov_file=args.covariate
+            num_jack=args.num_block,
+            num_bin=args.num_bin,
+            num_random_vec=args.num_vec,
+        )
+
+    else:
+        rhe = StreamingRHE(
+            geno_file=args.geno,
+            annot_file=annot_path,
+            pheno_file=pheno_file,
+            cov_file=args.covariate
+            num_jack=args.num_block,
+            num_bin=args.num_bin,
+            num_random_vec=args.num_vec,
+        )
 
     # RHE
     sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs = rhe()
@@ -39,7 +52,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
-    parser.add_argument('--no-streaming', action='store_false', dest='streaming')
+    parser.add_argument('--streaming', action='store_true', dest='use streamin version')
     parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='covariance file path')

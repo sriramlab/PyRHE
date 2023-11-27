@@ -192,11 +192,11 @@ class StreamingRHE(RHE):
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
             q[self.num_bin] = pheno.T @ pheno 
 
-            if method == "QR":
+            if method == "lstsq":
                 sigma_est = solve_linear_equation(T,q)
                 sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
-            elif method == "lstsq":
+            elif method == "QR":
                 sigma_est = solve_linear_qr(T,q)
                 sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
