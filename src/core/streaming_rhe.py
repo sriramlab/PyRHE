@@ -58,6 +58,7 @@ class StreamingRHE(RHE):
                     
                 if self.use_cov:
                     for b in range(self.num_random_vec):
+                        XXz_kjb = self._compute_XXz(b, X_kj) # TODO: optimize
                         UXXz_kjb = self._compute_UXXz(XXz_kjb)
                         XXUz_kjb = self._compute_XXUz(b, X_kj)
                         self.UXXz_sum[k][0][b] += UXXz_kjb
@@ -120,6 +121,7 @@ class StreamingRHE(RHE):
                     
                     T[k_k, k_l] += np.sum(B1 * B2)
 
+
                     if self.use_cov:
                         h1 = self.cov_matrix.T @ B1.T
                         h2 = self.Q @ h1
@@ -139,12 +141,12 @@ class StreamingRHE(RHE):
                                 B1[b, :] = self.XXUz_sum[k_k][0][b]
 
                             if j != self.num_jack:
-                                XXz_kkjb = self._compute_XXz(b, X_kkj) # TODO: optimize 
-                                UXXz_kljb = self._compute_UXXz(XXz_kkjb)
-                                jack_UXXz_kljb = self.UXXz_sum[k_k][0][b] - UXXz_kljb
+                                XXz_kljb = self._compute_XXz(b, X_klj) # TODO: optimize 
+                                UXXz_kljb = self._compute_UXXz(XXz_kljb)
+                                jack_UXXz_kljb = self.UXXz_sum[k_l][0][b] - UXXz_kljb
                                 B2[b, :] = jack_UXXz_kljb 
                             else:
-                                B2[b, :] = self.UXXz_sum[k_k][0][b]
+                                B2[b, :] = self.UXXz_sum[k_l][0][b]
 
                         trkij_res2 = np.sum(B1 * B2)
                         T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)

@@ -325,7 +325,6 @@ class RHE:
 
                     T[k_k, k_l] /= (self.num_random_vec)
                     T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
-                
 
 
             for k in range(self.num_bin):
