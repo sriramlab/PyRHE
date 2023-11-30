@@ -10,13 +10,13 @@ from constant import RESULT_DIR, DATA_DIR
 def main(args):
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
     pheno_dir = f"{DATA_DIR}/pheno_with_cov/bin_{args.num_bin}/" if args.covariate else f"{DATA_DIR}/pheno/bin_{args.num_bin}/"
-    rhemc_mem_path = "/u/home/j/jiayini/project-sriram/RHE-mc/build/RHEmc_mem"  
+    rhe_path = "/u/home/j/jiayini/project-sriram/RHE-mc/build/RHEmc_mem"  
 
     if not os.path.exists(RESULT_DIR):
         os.makedirs(RESULT_DIR)
 
     output_file = f"{RESULT_DIR}/{args.output}_{args.num_bin}.json"
-    assert os.access(rhemc_mem_path, os.X_OK), f"{rhemc_mem_path} is not executable"
+    assert os.access(rhe_path, os.X_OK), f"{rhe_path} is not executable"
     pheno_files = glob.glob(os.path.join(pheno_dir, "*.phen"))
 
     sigma_pattern = re.compile(r"Sigma\^2_(\d): (-?\d+\.\d+)  SE: (-?\d+\.\d+)")
@@ -29,7 +29,7 @@ def main(args):
         print(f"processing {pheno_file}")
         start_time = time.time() 
         cmd = [
-            rhemc_mem_path,
+            rhe_path,
             "-g", args.geno,
             "-p", pheno_file,
             "-annot", annot_path,

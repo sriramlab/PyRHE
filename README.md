@@ -14,18 +14,24 @@ python generate_annot.py -g {geno_path} -b {num_bin} -o {output_file}
 
 **3. Simulate Phenotype:**  
 
-Use the [Simulator](https://github.com/sriramlab/Simulator).
+Use the [Simulator](https://github.com/sriramlab/Simulator) to simulate phenotype without covariate.
+If want to add covariate, do 
+```
+cd core
+python simulate_pheno.py -b {num_bin}
+```
 
 **4. Run original RHE**  
 ```
 cd ..
-python run_original.py -g {geno_path} -b {num_bin} -k {num_vec} -jn {num_block} --output {output_file}
+python run_original.py -g {geno_path} -b {num_bin} -c {cov_file_path} -k {num_vec} -jn {num_block} --output {output_file}
 ```
 
 **5. Run python RHE**
+(request GPU first and then do conda activate gpu)
 ```
 cd ..
-python main.py -g {geno_path} -b {num_bin} -k {num_vec} -jn {num_block} --output {output_file}
+python run_rhe.py -g {geno_path} -b {num_bin} -k {num_vec} -c {cov_file_path} -jn {num_block} --output {output_file}
 ```
 
 **6. Visualize**
