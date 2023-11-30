@@ -1,3 +1,7 @@
+"""
+Add covariate component to the simulated phenotype
+"""
+import argparse
 import sys
 import os
 import numpy as np
@@ -21,10 +25,16 @@ def simulate_pheno(pheno_file, cov_file, output_file):
         for i, line in enumerate(data):
             file.write(f"{line[0]} {line[1]} {y_new[i][0]:.6f}\n")
 
-
 if __name__ == '__main__':
-    pheno_dir = '/u/home/j/jiayini/project-sriram/RHE_project/data/pheno/bin_1'
-    output_dir = '/u/home/j/jiayini/project-sriram/RHE_project/data/pheno_with_cov/bin_1'
+    parser = argparse.ArgumentParser(description='Simulate phenotype data with covariates.')
+    parser.add_argument('--num_bins', '-b', type=int, help='Number of bins to process')
+
+    args = parser.parse_args()
+
+    pheno_dir = f'/u/home/j/jiayini/project-sriram/RHE_project/data/pheno/bin_{args.num_bins}'
+    output_dir = f'/u/home/j/jiayini/project-sriram/RHE_project/data/pheno_with_cov/bin_{args.num_bins}'
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     covariate_file = '/u/home/j/jiayini/project-sriram/RHE_project/data/cov_25k.cov'
 
     if not os.path.exists(output_dir):

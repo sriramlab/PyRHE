@@ -1,5 +1,5 @@
 import argparse
-from src.core.rhe import RHE
+from src.core import RHE, StreamingRHE
 from constant import DATA_DIR
 
 def main(args):
@@ -9,22 +9,22 @@ def main(args):
     
     print(f"processing {pheno_file}")
     if args.streaming:
-        rhe = RHE(
+        rhe = StreamingRHE(
             geno_file=args.geno,
             annot_file=annot_path,
             pheno_file=pheno_file,
-            cov_file=args.covariate
+            cov_file=args.covariate,
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
         )
 
     else:
-        rhe = StreamingRHE(
+        rhe = RHE(
             geno_file=args.geno,
             annot_file=annot_path,
             pheno_file=pheno_file,
-            cov_file=args.covariate
+            cov_file=args.covariate,
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
@@ -52,7 +52,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
-    parser.add_argument('--streaming', action='store_true', dest='use streamin version')
+    parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='covariance file path')
