@@ -7,6 +7,9 @@ import json
 import time
 def main(args):
 
+    print(args.covariate)
+
+
     pheno_file = args.pheno
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
     
@@ -20,6 +23,7 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
+            seed=args.seed,
         )
 
     else:
@@ -31,6 +35,7 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
+            seed=args.seed,
         )
 
     # RHE
@@ -68,10 +73,12 @@ if __name__ == '__main__':
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
-    parser.add_argument('--covariate', '-c', type=str, default="/u/home/j/jiayini/project-sriram/RHE_project/data/cov_25k.cov", help='covariance file path')
+    parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
+    parser.add_argument('--seed', default=0, help='Random seed')
+
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
 
     
@@ -79,10 +86,15 @@ if __name__ == '__main__':
 
     # main(args)
 
-    base_pheno_path = "/u/home/j/jiayini/project-sriram/RHE_project/data/pheno_with_cov/bin_8"
 
     for i in range(25):
         args = parser.parse_args()
+        if args.covariate is not None:
+            cov = "_with_cov"
+        else:
+            cov = ""
+        base_pheno_path = f"/u/home/j/jiayini/project-sriram/RHE_project/data/pheno{cov}/bin_{args.num_bin}"
         args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
+        args.seed = i
         args.output = f"output_{i}"  
         main(args)
