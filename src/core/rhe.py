@@ -16,6 +16,7 @@ class RHE:
         num_bin: int = 8,
         num_jack: int = 1,
         num_random_vec: int = 10,
+        device: torch.device = torch.device("cpu"),
         verbose: bool = True,
         seed: int = 0,
     ):
@@ -23,6 +24,7 @@ class RHE:
         Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
         """
         np.random.seed(seed)
+        self.seed = seed
         self.num_bin= num_bin
         self.num_jack = num_jack
         self.num_random_vec = num_random_vec
@@ -32,6 +34,8 @@ class RHE:
             self.num_bin = num_bin
         else:
             self.num_bin = None
+
+        self.device = device
 
         # read fam and bim file
         self.geno_bed = open_bed(geno_file + ".bed")
@@ -50,10 +54,10 @@ class RHE:
 
         self.num_bin, self.annot_matrix, len_bin = read_annot(annot_file, self.num_jack)
 
-        # read pheno file and standardize
+        # read pheno file and center
         if pheno_file is not None:
             self.pheno = read_pheno(pheno_file)
-            self.pheno = self.pheno - np.mean(self.pheno)
+            self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
             assert self.num_indv == self.pheno.shape[0]
         else:
             self.pheno = None
@@ -68,24 +72,17 @@ class RHE:
             self.cov_matrix = read_cov(cov_file)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
-        
+         # track subsample size
+        self.M = np.zeros((self.num_jack + 1, self.num_bin))
+        self.M[self.num_jack] = len_bin
+
         # all_zb
         self.all_zb = np.random.randn(self.num_indv, self.num_random_vec)
         if self.use_cov:
             self.all_Uzb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
 
 
-        # XXz
-        self.XXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
-        self.yXXy = np.zeros((self.num_bin, self.num_jack + 1))
-        self.UXXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
-        self.XXUz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
-
-        # track subsample size
-        self.M = np.zeros((self.num_jack + 1, self.num_bin))
-        self.M[self.num_jack] = len_bin
-        
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -93,7 +90,7 @@ class RHE:
         '''
 
         geno = self.geno_bed.read()
-        geno = impute_geno(geno, simulate_geno=True)
+        geno = impute_geno(geno, simulate_geno=True,seed=self.seed)
 
         if len(sigma_list) != self.num_bin:
             
@@ -233,10 +230,17 @@ class RHE:
 
     def pre_compute(self):
 
+        # XXz
+        self.XXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv))
+        self.yXXy = np.zeros((self.num_bin, self.num_jack + 1))
+        self.UXXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+        self.XXUz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv)) if self.use_cov else None
+
+
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
             subsample, sub_annot = self._get_jacknife_subsample(j)
-            subsample = impute_geno(subsample, simulate_geno=True)
+            subsample = impute_geno(subsample, simulate_geno=True, seed=self.seed)
             all_gen = self.partition_bins(subsample, sub_annot)
                     
             for k, geno in enumerate(all_gen):
@@ -504,6 +508,7 @@ class RHE:
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
+    # TODO: fix for streaming version
     def get_yxxy(self):
         if not self.yXXy:  
             raise ValueError("yxxy has not been computed yet")

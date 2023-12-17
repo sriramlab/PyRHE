@@ -1,14 +1,27 @@
 import argparse
+import os
+import torch
+import numpy as np
 from src.core import RHE, StreamingRHE
 from constant import DATA_DIR, RESULT_DIR
-import os
-import numpy as np
 import json
 import time
 def main(args):
 
-    print(args.covariate)
+    print(args)
 
+    # Device
+    device = "cpu"
+    if args.device is not None:
+        if torch.cuda.is_available():
+            if args.device >= 0:
+                device = f"cuda:{args.device}"
+            else:
+                device = "cuda"
+        else:
+            print("cuda not available, fall back to cpu")
+            device = "cpu"
+    device = torch.device(device)
 
     pheno_file = args.pheno
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
@@ -23,6 +36,7 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
+            device=device,
             seed=args.seed,
         )
 
@@ -35,6 +49,7 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
+            device=device,
             seed=args.seed,
         )
 
@@ -61,7 +76,6 @@ def main(args):
     if not os.path.exists(result_dir):
         os.makedirs(result_dir)
     
-
     output_file_path = os.path.join(result_dir, f"{args.output}.json")
 
     with open(output_file_path, 'w', encoding='utf-8') as f:
@@ -78,7 +92,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
     parser.add_argument('--seed', default=0, help='Random seed')
-
+    parser.add_argument('--device', type=int, default=None, help="gpu number")
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
 
     

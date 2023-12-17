@@ -1,8 +1,8 @@
 import scipy
 import numpy as np
 
-def _simulate_geno_from_random(p_j):
-    np.random.seed(3) # TODO: remove
+def _simulate_geno_from_random(p_j, seed):
+    np.random.seed(seed)
     rval = np.random.random()
     dist_pj = [(1-p_j)*(1-p_j), 2*p_j*(1-p_j), p_j*p_j]
     
@@ -14,7 +14,7 @@ def _simulate_geno_from_random(p_j):
         return 2
     
 
-def impute_geno(X, simulate_geno: bool = True):
+def impute_geno(X, simulate_geno: bool = True, seed: int = 0):
     N = X.shape[0]
     M = X.shape[1]
     X_imp = X
@@ -28,7 +28,7 @@ def impute_geno(X, simulate_geno: bool = True):
             observed_mean = 0.5 * observed_sum / observed_ct
             
             missing_mask = np.isnan(X[:, m])
-            X_imp[missing_mask, m] = _simulate_geno_from_random(observed_mean)
+            X_imp[missing_mask, m] = _simulate_geno_from_random(observed_mean, seed)
     
     means = np.mean(X_imp, axis=0)
     stds = 1/np.sqrt(means*(1-0.5*means))

@@ -1,98 +1,73 @@
 import subprocess
 import os
 import argparse
-import json
-import glob
-import re 
 import time
 from constant import RESULT_DIR, DATA_DIR
 
 def main(args):
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
-    pheno_dir = f"{DATA_DIR}/pheno_with_cov/bin_{args.num_bin}" if args.covariate else f"{DATA_DIR}/pheno/bin_{args.num_bin}"
     rhe_path = "/u/home/j/jiayini/project-sriram/RHE-mc/build/RHEmc_mem"  
 
-    if not os.path.exists(RESULT_DIR):
-        os.makedirs(RESULT_DIR)
+    output_dir = f"{RESULT_DIR}/original_result/{'cov' if args.covariate else 'no_cov'}/bin_{args.num_bin}"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    output_file = f"{RESULT_DIR}/{args.output}_{args.num_bin}.json"
+    output_file = f"{output_dir}/{args.output}.txt"
     assert os.access(rhe_path, os.X_OK), f"{rhe_path} is not executable"
 
-    
-    pheno_files = glob.glob(os.path.join(pheno_dir, "*.phen"))
+    pheno_file = args.pheno
 
-    sigma_pattern = re.compile(r"Sigma\^2_(\d): (-?\d+\.\d+)  SE: (-?\d+\.\d+)")
-    h2_pattern = re.compile(r"h\^2 of bin (\d) : (-?\d+\.\d+) SE: (-?\d+\.\d+)")
-    enrichment_pattern = re.compile(r"Enrichment of bin (\d) : (-?\d+\.\d+) SE: (-?\d+\.\d+)")
+    print(f"processing {pheno_file}")
+    start_time = time.time() 
 
-    all_results = {}
+    cmd = [
+        rhe_path,
+        "-g", args.geno,
+        "-p", pheno_file,
+        "-annot", annot_path,
+        "-k", str(args.num_vec),
+        "-jn", str(args.num_block),
+    ]
 
-    for pheno_file in pheno_files:
-        print(f"processing {pheno_file}")
-        start_time = time.time() 
-        if args.covariate is not None:
-            cmd = [
-                rhe_path,
-                "-g", args.geno,
-                "-p", pheno_file,
-                "-annot", annot_path,
-                "-c", args.covariate,
-                "-k", str(args.num_vec),
-                "-jn", str(args.num_block),
-            ]
-        else:
-            cmd = [
-                    rhe_path,
-                    "-g", args.geno,
-                    "-p", pheno_file,
-                    "-annot", annot_path,
-                    "-k", str(args.num_vec),
-                    "-jn", str(args.num_block),
-                ]
-        
-        
-        result = subprocess.run(cmd, text=True, capture_output=True)
-        end_time = time.time()
+    if args.covariate is not None:
+        cmd += ["-c", args.covariate]
 
-        if result.returncode != 0:
-            print(f"Error with {pheno_file}:")
-            print(result.stderr)
-            continue
+    result = subprocess.run(cmd, text=True, capture_output=True)
+    end_time = time.time()
 
-        print(result.stdout)
+    if result.returncode != 0:
+        print(f"Error with {pheno_file}:")
+        print(result.stderr)
+        return
 
-        runtime = end_time - start_time
-        print(f"RHE original runtime: {runtime:.5f} seconds")
-
-        sigma_matches = sigma_pattern.findall(result.stdout)
-        h2_matches = h2_pattern.findall(result.stdout)
-        enrichment_matches = enrichment_pattern.findall(result.stdout)
-
-        pheno_results = {
-            "sigma": [{ "index": int(m[0]), "sigma": float(m[1]), "SE": float(m[2])} for m in sigma_matches],
-            "h2": [{ "bin": int(m[0]), "h2": float(m[1]), "SE": float(m[2])} for m in h2_matches],
-            "enrichment": [{ "bin": int(m[0]), "enrichment": float(m[1]), "SE": float(m[2])} for m in enrichment_matches],
-            "runtime": runtime
-        }
-        
-        all_results[pheno_file] = pheno_results
+    runtime = end_time - start_time
+    print(f"RHE original runtime: {runtime:.5f} seconds")
 
     with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(all_results, f, ensure_ascii=False, indent=4)
+        f.write(result.stdout)
+        f.write(f"\nruntime: {runtime:.5f} seconds\n")  
 
-    print("Processing complete.")
-
+    print("Processing complete for " + pheno_file)
 
 if __name__ == '__main__':
-    # "/u/home/j/jiayini/project-sriram/RHE_project/data/cov_25k.cov"
-    parser = argparse.ArgumentParser(description='Original RHE') 
+    parser = argparse.ArgumentParser(description='PyRHE') 
+    parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
-    parser.add_argument('--covariate', '-c', type=str, default=None, help='covariance file path')
-    parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
+    parser.add_argument('--pheno', '-p', type=str, help='phenotype file path')
+    parser.add_argument('--covariate', '-c', type=str, help='Covariate file path')
+    parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors.')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
-    parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
-    parser.add_argument("--output", type=str, default="original_result", help='output of the file')
-    
-    args = parser.parse_args()
-    
-    main(args)
+    parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks.')
+    parser.add_argument('--seed', type=int, default=0, help='Random seed')
+    parser.add_argument('--device', type=int, help="gpu number")
+    parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
+
+    for i in range(25):
+        args = parser.parse_args()
+        cov = "_with_cov" if args.covariate else ""
+        base_pheno_path = f"/u/home/j/jiayini/project-sriram/RHE_project/data/pheno{cov}/bin_{args.num_bin}"
+        args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
+        args.seed = i
+        args.output = f"output_{i}"  
+        main(args)
+

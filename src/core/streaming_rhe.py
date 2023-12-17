@@ -28,26 +28,20 @@ class StreamingRHE(RHE):
             seed=seed
         )
 
-        self.XXz = None
-        self.yXXy = None
-        self.UXXz = None
-        self.XXUz = None
-        
-        self.XXz_sum = np.zeros((self.num_bin, 1, self.num_random_vec, self.num_indv))
-        self.yXXy_sum = np.zeros((self.num_bin, 1))
-        self.UXXz_sum = np.zeros((self.num_bin, 1, self.num_random_vec, self.num_indv))
-        self.XXUz_sum = np.zeros((self.num_bin, 1, self.num_random_vec, self.num_indv))
-
 
     def pre_compute(self):
         """
         Only Compute the Sum
         """
-    
+        self.XXz_sum = np.zeros((self.num_bin, 1, self.num_random_vec, self.num_indv))
+        self.yXXy_sum = np.zeros((self.num_bin, 1))
+        self.UXXz_sum = np.zeros((self.num_bin, 1, self.num_random_vec, self.num_indv))
+        self.XXUz_sum = np.zeros((self.num_bin, 1, self.num_random_vec, self.num_indv))
+
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
             subsample, sub_annot = self._get_jacknife_subsample(j)
-            subsample = impute_geno(subsample, simulate_geno=True)
+            subsample = impute_geno(subsample, simulate_geno=True, seed=self.seed)
             all_gen = self.partition_bins(subsample, sub_annot)
                     
             for k, X_kj in enumerate(all_gen):
@@ -55,10 +49,8 @@ class StreamingRHE(RHE):
                 for b in range(self.num_random_vec):
                     XXz_kjb = self._compute_XXz(b, X_kj)
                     self.XXz_sum[k][0][b] += XXz_kjb
-                    
-                if self.use_cov:
-                    for b in range(self.num_random_vec):
-                        XXz_kjb = self._compute_XXz(b, X_kj) # TODO: optimize
+
+                    if self.use_cov:
                         UXXz_kjb = self._compute_UXXz(XXz_kjb)
                         XXUz_kjb = self._compute_XXUz(b, X_kj)
                         self.UXXz_sum[k][0][b] += UXXz_kjb
@@ -91,7 +83,7 @@ class StreamingRHE(RHE):
 
             if j != self.num_jack:
                 subsample, sub_annot = self._get_jacknife_subsample(j)
-                subsample = impute_geno(subsample, simulate_geno=True)
+                subsample = impute_geno(subsample, simulate_geno=True, seed=self.seed)
                 all_gen = self.partition_bins(subsample, sub_annot)
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
@@ -114,6 +106,8 @@ class StreamingRHE(RHE):
                         
                         if j != self.num_jack:
                             XXz_kljb = self._compute_XXz(b, X_klj)
+                            if self.use_cov:
+                                temp_UXXz_kljb = self._compute_UXXz(XXz_kljb)
                             jack_XXz_kljb = self.XXz_sum[k_l][0][b] - XXz_kljb
                             B2[b, :] = jack_XXz_kljb
                         else:
@@ -141,9 +135,7 @@ class StreamingRHE(RHE):
                                 B1[b, :] = self.XXUz_sum[k_k][0][b]
 
                             if j != self.num_jack:
-                                XXz_kljb = self._compute_XXz(b, X_klj) # TODO: optimize 
-                                UXXz_kljb = self._compute_UXXz(XXz_kljb)
-                                jack_UXXz_kljb = self.UXXz_sum[k_l][0][b] - UXXz_kljb
+                                jack_UXXz_kljb = self.UXXz_sum[k_l][0][b] - temp_UXXz_kljb
                                 B2[b, :] = jack_UXXz_kljb 
                             else:
                                 B2[b, :] = self.UXXz_sum[k_l][0][b]
