@@ -1,22 +1,21 @@
 """
 Generate annotation file
 """
+import sys
+sys.path.insert(0, '/u/home/j/jiayini/project-sriram/RHE_project')
 import os
 import random
 import argparse
 from bed_reader import open_bed
+from constant import DATA_DIR
+
 
 def create_annot_file(geno_file, num_bin, filename):
 
     random.seed(0)
-
     try:
         bed = open_bed(geno_file + ".bed")
         geno = bed.read()
-    except FileNotFoundError:
-        raise FileNotFoundError("The .bed file could not be found.")
-    except IOError:
-        raise IOError("An IO error occurred while reading the .bed file.")
     except Exception as e:
         raise Exception(f"Error occurred: {e}")
 
@@ -33,7 +32,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='generate annot')
     parser.add_argument('--geno', '-g', type=str, default=None, help='path of the genotype file')
     parser.add_argument('--num_bin', '-b', type=int, default=1, help='number of bins')
-    parser.add_argument('--output_dir', '-o', type=str, default='/u/home/j/jiayini/RHE_project/data/annot', help='directory to store the generated annot')
+    parser.add_argument('--output_dir', '-o', type=str, default=f'{DATA_DIR}/annot', help='directory to store the generated annot')
 
     args = parser.parse_args()
 

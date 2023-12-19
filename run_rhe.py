@@ -6,21 +6,23 @@ from src.core import RHE, StreamingRHE
 from constant import DATA_DIR, RESULT_DIR
 import json
 import time
+
+
 def main(args):
 
     print(args)
 
     # Device
+
     device = "cpu"
-    if args.device is not None:
-        if torch.cuda.is_available():
-            if args.device >= 0:
-                device = f"cuda:{args.device}"
-            else:
-                device = "cuda"
+    if torch.cuda.is_available():
+        if args.device >= 0:
+            device = f"cuda:{args.device}"
         else:
-            print("cuda not available, fall back to cpu")
-            device = "cpu"
+            device = "cuda"
+    else:
+        print("cuda not available, fall back to cpu")
+        device = "cpu"
     device = torch.device(device)
 
     pheno_file = args.pheno
@@ -92,7 +94,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
     parser.add_argument('--seed', default=0, help='Random seed')
-    parser.add_argument('--device', type=int, default=None, help="gpu number")
+    parser.add_argument('--device', type=int, default=-1, help="gpu number")
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
 
     
@@ -107,7 +109,7 @@ if __name__ == '__main__':
             cov = "_with_cov"
         else:
             cov = ""
-        base_pheno_path = f"/u/home/j/jiayini/project-sriram/RHE_project/data/pheno{cov}/bin_{args.num_bin}"
+        base_pheno_path = f"{DATA_DIR}/pheno{cov}/bin_{args.num_bin}"
         args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
         args.seed = i
         args.output = f"output_{i}"  

@@ -1,6 +1,5 @@
 import time
 import torch
-import numpy as np
 from typing import List, Tuple
 from bed_reader import open_bed
 from src.util.math import *
@@ -23,8 +22,24 @@ class RHE:
         """
         Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
         """
-        np.random.seed(seed)
+
+        # Configure
+        print(f"Using device {device}")
+        if 'cuda' in device.type:
+            try:
+                import cupy as np
+                print("Using CuPy for GPU-accelerated computations.")
+            except ImportError:
+                print("CuPy is not installed. Falling back to NumPy")
+                import numpy as np
+        else:
+            import numpy as np
+
+        # Seed
         self.seed = seed
+        np.random.seed(seed)
+
+
         self.num_bin= num_bin
         self.num_jack = num_jack
         self.num_random_vec = num_random_vec
@@ -184,26 +199,19 @@ class RHE:
         return subsample, sub_annot
 
     def _to_tensor(self, mat):
-        return torch.from_numpy(mat).float().to(self.device) if self.device == torch.device("cuda") else mat
+        return torch.from_numpy(mat).float().to(self.device)
 
     def mat_mul(self, *mats, to_numpy=True):
         if not mats:
             raise ValueError("At least one matrix is required.")
-
-        if self.device == torch.device("cuda"):
-            result_tensor = self._to_tensor(mats[0])
-            for mat in mats[1:]:
-                tensor = self._to_tensor(mat)
-                result_tensor = result_tensor @ tensor
-            if to_numpy:
-                return result_tensor.cpu().numpy()
-            else:
-                return result_tensor
+        result_tensor = self._to_tensor(mats[0])
+        for mat in mats[1:]:
+            tensor = self._to_tensor(mat)
+            result_tensor = result_tensor @ tensor
+        if to_numpy:
+            return result_tensor.cpu().numpy()
         else:
-            result = mats[0]
-            for mat in mats[1:]:
-                result = result @ mat
-            return result
+            return result_tensor
 
     def regress_pheno(self, cov_matrix, pheno):
         """
@@ -247,7 +255,10 @@ class RHE:
                 X_kj = geno
                 self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
+                    start = time.time()
                     self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                    end = time.time()
+                    print(f"mat mul time: {end-start}")
                 
                 if self.use_cov:
                     for b in range(self.num_random_vec):
