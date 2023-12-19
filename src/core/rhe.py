@@ -1,9 +1,11 @@
 import time
 import torch
+import scipy
 from typing import List, Tuple
 from bed_reader import open_bed
-from src.util.math import *
 from src.util.file_processing import *
+
+import numpy as np
 
 class RHE:
     def __init__(
@@ -23,8 +25,8 @@ class RHE:
         Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
         """
 
-        # Configure
         print(f"Using device {device}")
+        # Cupy
         if 'cuda' in device.type:
             try:
                 import cupy as np
@@ -34,6 +36,7 @@ class RHE:
                 import numpy as np
         else:
             import numpy as np
+
 
         # Seed
         self.seed = seed
@@ -105,7 +108,7 @@ class RHE:
         '''
 
         geno = self.geno_bed.read()
-        geno = impute_geno(geno, simulate_geno=True,seed=self.seed)
+        geno = self.impute_geno(geno, simulate_geno=True)
 
         if len(sigma_list) != self.num_bin:
             
@@ -153,6 +156,57 @@ class RHE:
 
         return y, betas
 
+        
+    def _simulate_geno_from_random(self, p_j):
+        rval = np.random.random()
+        dist_pj = [(1-p_j)*(1-p_j), 2*p_j*(1-p_j), p_j*p_j]
+        
+        if rval < dist_pj[0]:
+            return 0
+        elif rval >= dist_pj[0] and rval < (dist_pj[0] + dist_pj[1]):
+            return 1
+        else:
+            return 2
+        
+
+    def impute_geno(self, X, simulate_geno: bool = True):
+        N = X.shape[0]
+        M = X.shape[1]
+        X_imp = X
+        if simulate_geno:
+            for m in range(M):
+                observed_mask = ~np.isnan(X[:, m])
+                observed_values = X[observed_mask, m]
+                
+                observed_ct = observed_values.size
+                observed_sum = np.sum(observed_values)
+                observed_mean = 0.5 * observed_sum / observed_ct
+                
+                missing_mask = np.isnan(X[:, m])
+                X_imp[missing_mask, m] = self._simulate_geno_from_random(observed_mean)
+        
+        means = np.mean(X_imp, axis=0)
+        stds = 1/np.sqrt(means*(1-0.5*means))
+        X_imp = (X_imp - means) * stds
+        return X_imp
+
+    def solve_linear_equation(self, X, y):
+            '''
+            Solve least square
+            '''
+            sigma = np.linalg.lstsq(X, y, rcond=None)[0]
+            return sigma
+
+
+    def solve_linear_qr(self, X, y):
+            '''
+            Solve least square using QR decomposition
+            '''
+            Q, R = scipy.linalg.qr(X)
+            sigma = scipy.linalg.solve_triangular(R, np.dot(Q.T, y))
+            return sigma
+
+
     def _bin_to_snp(self, annot): 
         bin_to_snp_indices = []
 
@@ -189,10 +243,13 @@ class RHE:
         end = start + chunk_size
 
          # read bed file
+        start_time = time.time()
         try:
             subsample = self.geno_bed.read(index=np.s_[::1,start:end])
         except Exception as e:
             raise Exception(f"Error occurred: {e}")
+        end_time = time.time()
+        print(f"read geno time: {end_time - start_time}")
 
         sub_annot = self.annot_matrix[start:end]
 
@@ -247,8 +304,12 @@ class RHE:
 
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
+            start_whole = time.time()
             subsample, sub_annot = self._get_jacknife_subsample(j)
-            subsample = impute_geno(subsample, simulate_geno=True, seed=self.seed)
+            start=time.time()
+            subsample = self.impute_geno(subsample, simulate_geno=True)
+            end=time.time()
+            print(f"impute time: {end - start}")
             all_gen = self.partition_bins(subsample, sub_annot)
                     
             for k, geno in enumerate(all_gen):
@@ -258,7 +319,7 @@ class RHE:
                     start = time.time()
                     self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
                     end = time.time()
-                    print(f"mat mul time: {end-start}")
+                    # print(f"mat mul time: {end-start}")
                 
                 if self.use_cov:
                     for b in range(self.num_random_vec):
@@ -267,8 +328,11 @@ class RHE:
 
                 self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
                 del X_kj
-            
-        
+
+            end_whole = time.time()
+            print(f"jacknife compute total time: {end_whole-start_whole}")
+                
+
         for k in range(self.num_bin):
             for j in range(self.num_jack):
                 for b in range (self.num_random_vec):
@@ -367,11 +431,11 @@ class RHE:
 
 
             if method == "lstsq":
-                sigma_est = solve_linear_equation(T,q)
+                sigma_est = self.solve_linear_equation(T,q)
                 sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             elif method == "QR":
-                sigma_est = solve_linear_qr(T,q)
+                sigma_est = self.solve_linear_qr(T,q)
                 sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             else:

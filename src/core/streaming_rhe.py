@@ -1,6 +1,5 @@
 import numpy as np
 from src.core.rhe import RHE
-from src.util.math import *
 from typing import List, Tuple
 
 class StreamingRHE(RHE):
@@ -41,7 +40,7 @@ class StreamingRHE(RHE):
         for j in range(self.num_jack):
             print(f"Precompute for jackknife sample {j}")
             subsample, sub_annot = self._get_jacknife_subsample(j)
-            subsample = impute_geno(subsample, simulate_geno=True, seed=self.seed)
+            subsample = self.impute_geno(subsample, simulate_geno=True)
             all_gen = self.partition_bins(subsample, sub_annot)
                     
             for k, X_kj in enumerate(all_gen):
@@ -83,7 +82,7 @@ class StreamingRHE(RHE):
 
             if j != self.num_jack:
                 subsample, sub_annot = self._get_jacknife_subsample(j)
-                subsample = impute_geno(subsample, simulate_geno=True, seed=self.seed)
+                subsample = self.impute_geno(subsample, simulate_geno=True)
                 all_gen = self.partition_bins(subsample, sub_annot)
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
@@ -185,11 +184,11 @@ class StreamingRHE(RHE):
             q[self.num_bin] = pheno.T @ pheno 
 
             if method == "lstsq":
-                sigma_est = solve_linear_equation(T,q)
+                sigma_est = self.solve_linear_equation(T,q)
                 sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             elif method == "QR":
-                sigma_est = solve_linear_qr(T,q)
+                sigma_est = self.solve_linear_qr(T,q)
                 sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             else:
