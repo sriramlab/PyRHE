@@ -1,9 +1,13 @@
 import time
 import torch
 import scipy
+import atexit
 from typing import List, Tuple
 from bed_reader import open_bed
 from src.util.file_processing import *
+import multiprocessing
+from multiprocessing import shared_memory
+
 
 class RHE:
     def __init__(
@@ -16,6 +20,7 @@ class RHE:
         num_jack: int = 1,
         num_random_vec: int = 10,
         device: torch.device = torch.device("cpu"),
+        multiprocessing: bool = True,
         verbose: bool = True,
         seed: int = 0,
     ):
@@ -24,7 +29,7 @@ class RHE:
         """
 
         print(f"Using device {device}")
-        # Cupy
+        # Configure
         if 'cuda' in device.type:
             try:
                 import cupy as cp
@@ -37,7 +42,8 @@ class RHE:
         else:
             import numpy as np
             self.np = np
-
+        self.multiprocessing = multiprocessing
+        
 
         # Seed
         self.seed = seed
@@ -71,7 +77,7 @@ class RHE:
 
             generate_annot(annot_file, self.num_snp, self.num_bin)
 
-        self.num_bin, self.annot_matrix, len_bin = read_annot(annot_file, self.num_jack)
+        self.num_bin, self.annot_matrix, self.len_bin = read_annot(annot_file, self.num_jack)
 
         # read pheno file and center
         if pheno_file is not None:
@@ -92,15 +98,19 @@ class RHE:
             self.Q = self.np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
          # track subsample size
-        self.M = self.np.zeros((self.num_jack + 1, self.num_bin))
-        self.M[self.num_jack] = len_bin
+        if not self.multiprocessing:
+            self.M = self.np.zeros((self.num_jack + 1, self.num_bin))
+            self.M[self.num_jack] = self.len_bin
+
 
         # all_zb
         self.all_zb = self.np.random.randn(self.num_indv, self.num_random_vec)
         if self.use_cov:
             self.all_Uzb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
 
-
+        # atexit
+        if self.multiprocessing:
+            atexit.register(self._finalize)
     
     
     def simulate_pheno(self, sigma_list: List):
@@ -294,46 +304,92 @@ class RHE:
         v = self.mat_mul(X_kj.T, pheno)
         return self.mat_mul(v.T, v)
 
+
+    def _setup_shared_memory(self):
+        self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+        self.XXz = self.np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
+        self.XXz.fill(0)
+
+        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * np.float64().itemsize)
+        self.yXXy = self.np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=self.yXXy_shm.buf)
+        self.yXXy.fill(0)
+
+        if self.use_cov:
+            self.UXXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+            self.UXXz = self.np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.UXXz_shm.buf)
+            self.UXXz.fill(0)
+
+            self.XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+            self.XXUz = self.np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXUz_shm.buf)
+            self.XXUz.fill(0)
+        else:
+            self.UXXz = None
+            self.XXUz = None
+        
+        self.M_shm = shared_memory.SharedMemory(create=True, size= (self.num_jack + 1) * self.num_bin * np.int64().itemsize)
+        self.M =  self.np.ndarray((self.num_jack + 1, self.num_bin), buffer=self.M_shm.buf)
+        self.M.fill(0)
+        self.M[self.num_jack] = self.len_bin
+
+
+    def _pre_compute_worker(self, j):
+        print(f"Precompute for jackknife sample {j}")
+        start_whole = time.time()
+        subsample, sub_annot = self._get_jacknife_subsample(j)
+        start = time.time()
+        subsample = self.impute_geno(subsample, simulate_geno=True)
+        end = time.time()
+        print(f"impute time: {end - start}")
+        all_gen = self.partition_bins(subsample, sub_annot)
+
+        for k, geno in enumerate(all_gen): 
+            X_kj = geno
+            self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1]
+            for b in range(self.num_random_vec):
+                self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                if self.use_cov:
+                    self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
+                    self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+            self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+
+        end_whole = time.time()
+        print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
+
     def pre_compute(self):
 
-        # XXz
-        self.XXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64)
-        self.yXXy = self.np.zeros((self.num_bin, self.num_jack + 1), dtype=self.np.float64)
-        self.UXXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
-        self.XXUz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
+        start_whole = time.time()
 
-
-        for j in range(self.num_jack):
-            print(f"Precompute for jackknife sample {j}")
-            start_whole = time.time()
-            subsample, sub_annot = self._get_jacknife_subsample(j)
-            start=time.time()
-            subsample = self.impute_geno(subsample, simulate_geno=True)
-            end=time.time()
-            print(f"impute time: {end - start}")
-            all_gen = self.partition_bins(subsample, sub_annot)
-
-                    
-            for k, geno in enumerate(all_gen): 
-                X_kj = geno
-                self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
-                for b in range(self.num_random_vec):
-                    start = time.time()
-                    self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
-                    end = time.time()
-                    # print(f"mat mul time: {end-start}")
-                    if self.use_cov:
-                        self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                        self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-        
-
-                self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+        if self.multiprocessing:
             
+            self._setup_shared_memory()
 
+            processes = []
+            for j in range(self.num_jack):
+                p = multiprocessing.Process(target=self._pre_compute_worker, args=(j,))
+                processes.append(p)
+                p.start()
 
-            end_whole = time.time()
-            print(f"jackknife precompute total time: {end_whole-start_whole}")
-                
+            for p in processes:
+                p.join()
+
+            print(self.XXz)
+            print(self.XXz_shm)
+            
+            # self._close_shared_memory()
+        
+        else:
+
+            self.XXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64)
+            self.yXXy = self.np.zeros((self.num_bin, self.num_jack + 1), dtype=self.np.float64)
+            self.UXXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
+            self.XXUz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
+
+            for j in range(self.num_jack):
+                self._pre_compute_worker(j)
+
+        end_whole = time.time()
+
+        print(f"Precompute total time: {end_whole - start_whole}")
 
         for k in range(self.num_bin):
             for j in range(self.num_jack):
@@ -357,6 +413,24 @@ class RHE:
                     for b in range (self.num_random_vec):
                         self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
                         self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
+
+    def _close_shared_memory(self):
+        self.XXz_shm.close()
+        self.yXXy_shm.close()
+        if self.use_cov:
+            self.UXXz_shm.close()
+            self.XXUz_shm.close()
+        
+        self.M_shm.close()
+
+    def _finalize(self):
+        self.XXz_shm.unlink()
+        self.yXXy_shm.unlink()
+        if self.use_cov:
+            self.UXXz_shm.unlink()
+            self.XXUz_shm.unlink()
+        
+        self.M_shm.unlink()
         
      
     def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
@@ -580,7 +654,9 @@ class RHE:
 
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
-
+        
+        self._finalize()
+        
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
     # TODO: fix for streaming version

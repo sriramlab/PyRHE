@@ -39,6 +39,7 @@ def main(args):
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
             device=device,
+            multiprocessing=args.multiprocessing,
             seed=args.seed,
         )
 
@@ -52,6 +53,7 @@ def main(args):
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
             device=device,
+            multiprocessing=args.multiprocessing,
             seed=args.seed,
         )
 
@@ -87,6 +89,8 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
+    parser.add_argument('--multiprocessing', action='store_true', help='use streaming version')
+
     parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
@@ -103,7 +107,7 @@ if __name__ == '__main__':
     # main(args)
 
 
-    for i in range(25):
+    for i in range(1):
         args = parser.parse_args()
         if args.covariate is not None:
             cov = "_with_cov"
@@ -113,4 +117,5 @@ if __name__ == '__main__':
         args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
         args.seed = i
         args.output = f"output_{i}"  
+        args.multiprocessing = True
         main(args)
