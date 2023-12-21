@@ -5,6 +5,7 @@ import atexit
 from typing import List, Tuple
 from bed_reader import open_bed
 from src.util.file_processing import *
+from tqdm import tqdm
 import multiprocessing
 from multiprocessing import shared_memory
 
@@ -334,6 +335,7 @@ class RHE:
 
     def _pre_compute_worker(self, j):
         print(f"Precompute for jackknife sample {j}")
+        np.random.seed(self.seed + j)
         start_whole = time.time()
         subsample, sub_annot = self._get_jacknife_subsample(j)
         start = time.time()
@@ -369,11 +371,10 @@ class RHE:
                 processes.append(p)
                 p.start()
 
-            for p in processes:
+            for p in tqdm(processes, desc="Preprocessing jackknife subsamples..."):
                 p.join()
 
             print(self.XXz)
-            print(self.XXz_shm)
             
             # self._close_shared_memory()
         
@@ -384,7 +385,7 @@ class RHE:
             self.UXXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
             self.XXUz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
 
-            for j in range(self.num_jack):
+            for j in tqdm(range(self.num_jack), desc="Preprocessing jackknife subsamples..."):
                 self._pre_compute_worker(j)
 
         end_whole = time.time()
@@ -654,9 +655,7 @@ class RHE:
 
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
-        
-        self._finalize()
-        
+
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
     # TODO: fix for streaming version
