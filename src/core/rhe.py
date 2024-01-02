@@ -11,6 +11,8 @@ from tqdm import tqdm
 import multiprocessing
 from multiprocessing import shared_memory
 
+from src.util.mat_mul import *
+
 
 
 class RHE:
@@ -23,7 +25,7 @@ class RHE:
         num_bin: int = 8,
         num_jack: int = 1,
         num_random_vec: int = 10,
-        device: torch.device = torch.device("cpu"),
+        device: str = "cpu",
         multiprocessing: bool = True,
         verbose: bool = True,
         seed: int = 0,
@@ -64,7 +66,9 @@ class RHE:
         else:
             self.num_bin = None
 
-        self.device = device
+        # init device
+        self.device_name = device
+        self._init_device(self.device_name)
 
         # read fam and bim file
         self.geno_bed = open_bed(geno_file + ".bed")
@@ -115,6 +119,13 @@ class RHE:
         # atexit
         if self.multiprocessing:
             atexit.register(self._finalize)
+    
+
+    def _init_device(self, device):
+        if device == "gpu" and torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
     
     
     def simulate_pheno(self, sigma_list: List):
@@ -270,20 +281,6 @@ class RHE:
 
         return subsample, sub_annot
 
-    def _to_tensor(self, mat):
-        return torch.from_numpy(mat).float().to(self.device)
-
-    def mat_mul(self, *mats, to_numpy=True):
-        if not mats:
-            raise ValueError("At least one matrix is required.")
-        result_tensor = self._to_tensor(mats[0])
-        for mat in mats[1:]:
-            tensor = self._to_tensor(mat)
-            result_tensor = result_tensor @ tensor
-        if to_numpy:
-            return result_tensor.cpu().numpy()
-        else:
-            return result_tensor
 
     def regress_pheno(self, cov_matrix, pheno):
         """
@@ -294,19 +291,19 @@ class RHE:
     
     def _compute_XXz(self, b, X_kj):
         random_vec = self.all_zb[:, b].reshape(-1, 1)
-        return (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
+        return (mat_mul(X_kj, mat_mul(X_kj.T, random_vec, device=self.device), device=self.device)).flatten()
     
     def _compute_UXXz(self, XXz_kjb):
-        return self.mat_mul(self.cov_matrix, self.mat_mul(self.Q, self.mat_mul(self.cov_matrix.T, XXz_kjb))).flatten()
+        return mat_mul(self.cov_matrix, mat_mul(self.Q, mat_mul(self.cov_matrix.T, XXz_kjb)), device=self.device).flatten()
     
     def _compute_XXUz(self, b, X_kj):
         random_vec_cov = self.all_Uzb[:, b].reshape(-1, 1)
-        return self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec_cov)).flatten()  
+        return mat_mul(X_kj, mat_mul(X_kj.T, random_vec_cov), device=self.device).flatten()  
 
     def _compute_yXXy(self, X_kj, y):
         pheno = y if not self.use_cov else self.regress_pheno(self.cov_matrix, y)
-        v = self.mat_mul(X_kj.T, pheno)
-        return self.mat_mul(v.T, v)
+        v = mat_mul(X_kj.T, pheno, device=self.device)
+        return mat_mul(v.T, v, device=self.device)
 
 
     def _setup_shared_memory(self):
@@ -337,6 +334,9 @@ class RHE:
 
 
     def _pre_compute_worker(self, j):
+        if self.multiprocessing:
+            self._init_device(self.device_name)
+
         print(f"Precompute for jackknife sample {j}")
         np.random.seed(self.seed + j)
         start_whole = time.time()
@@ -408,8 +408,6 @@ class RHE:
         start_whole = time.time()
 
         if self.multiprocessing:
-
-            multiprocessing.set_start_method('spawn', force=True)
             self._setup_shared_memory()
 
             processes = []
