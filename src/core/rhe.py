@@ -1,4 +1,6 @@
 import time
+import sys
+import signal
 import torch
 import scipy
 import atexit
@@ -8,6 +10,7 @@ from src.util.file_processing import *
 from tqdm import tqdm
 import multiprocessing
 from multiprocessing import shared_memory
+
 
 
 class RHE:
@@ -337,6 +340,38 @@ class RHE:
         print(f"Precompute for jackknife sample {j}")
         np.random.seed(self.seed + j)
         start_whole = time.time()
+
+        if self.multiprocessing:
+            # set up shared memory in child
+            XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
+            XXz = self.np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
+            XXz.fill(0)
+
+            yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
+            yXXy = self.np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=yXXy_shm.buf)
+            yXXy.fill(0)
+
+            if self.use_cov:
+                UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
+                UXXz = self.np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
+                UXXz.fill(0)
+
+                XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+                XXUz = self.np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
+                XXUz.fill(0)
+            
+            M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
+            M =  self.np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
+            M.fill(0)
+            M[self.num_jack] = self.len_bin
+
+        else:
+            XXz = self.XXz
+            yXXy = self.yXXy
+            UXXz = self.UXXz
+            XXUz = self.XXUz
+            M = self.M
+
         subsample, sub_annot = self._get_jacknife_subsample(j)
         start = time.time()
         subsample = self.impute_geno(subsample, simulate_geno=True)
@@ -346,23 +381,35 @@ class RHE:
 
         for k, geno in enumerate(all_gen): 
             X_kj = geno
-            self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1]
+            M[j][k] = M[self.num_jack][k] - geno.shape[1]
             for b in range(self.num_random_vec):
-                self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
                 if self.use_cov:
-                    self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                    self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-            self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+                    UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
+                    XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+            yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
 
         end_whole = time.time()
         print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
 
     def pre_compute(self):
 
+        def _signal_handler(sig, frame):
+            for p in processes:
+                try:
+                    if p.is_alive() and p._popen is not None:
+                        p.terminate()
+                except AssertionError:
+                    pass            
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, _signal_handler)
+
         start_whole = time.time()
 
         if self.multiprocessing:
-            
+
+            multiprocessing.set_start_method('spawn', force=True)
             self._setup_shared_memory()
 
             processes = []
@@ -373,11 +420,7 @@ class RHE:
 
             for p in tqdm(processes, desc="Preprocessing jackknife subsamples..."):
                 p.join()
-
-            print(self.XXz)
-            
-            # self._close_shared_memory()
-        
+             
         else:
 
             self.XXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64)
@@ -415,7 +458,7 @@ class RHE:
                         self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
                         self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
-    def _close_shared_memory(self):
+    def _finalize(self):
         self.XXz_shm.close()
         self.yXXy_shm.close()
         if self.use_cov:
@@ -424,7 +467,6 @@ class RHE:
         
         self.M_shm.close()
 
-    def _finalize(self):
         self.XXz_shm.unlink()
         self.yXXy_shm.unlink()
         if self.use_cov:

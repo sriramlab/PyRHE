@@ -117,5 +117,5 @@ if __name__ == '__main__':
         args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
         args.seed = i
         args.output = f"output_{i}"  
-        args.multiprocessing = False
+        args.multiprocessing = True
         main(args)
