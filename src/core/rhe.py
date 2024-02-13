@@ -120,7 +120,7 @@ class RHE:
     
 
     def _init_device(self, device):
-        if device == "gpu" and torch.cuda.is_available():
+        if torch.cuda.is_available(): # TODO: fixed
             self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
@@ -413,6 +413,7 @@ class RHE:
         start_whole = time.time()
 
         if self.multiprocessing:
+            multiprocessing.set_start_method('spawn')
             self._setup_shared_memory(num_block)
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
             print(work_ranges)
