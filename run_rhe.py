@@ -13,7 +13,6 @@ def main(args):
     print(args)
 
     # Device
-
     device = "cpu"
     if torch.cuda.is_available():
         if args.device >= 0:
@@ -54,6 +53,7 @@ def main(args):
             num_random_vec=args.num_vec,
             device=device,
             multiprocessing=args.multiprocessing,
+            num_workers=args.num_workers,
             seed=args.seed,
         )
 
@@ -91,11 +91,12 @@ if __name__ == '__main__':
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--multiprocessing', action='store_true', help='use streaming version')
 
-    parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
+    parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
+    parser.add_argument('--num_workers', type=int, default=10, help='Number of workers')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
     parser.add_argument('--seed', default=0, help='Random seed')
     parser.add_argument('--device', type=int, default=-1, help="gpu number")

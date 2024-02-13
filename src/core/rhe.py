@@ -27,6 +27,7 @@ class RHE:
         num_jack: int = 1,
         num_random_vec: int = 10,
         device: str = "cpu",
+        num_workers: int = None,
         multiprocessing: bool = True,
         verbose: bool = True,
         seed: int = 0,
@@ -56,6 +57,17 @@ class RHE:
         # init device
         self.device_name = device
         self._init_device(self.device_name)
+
+        # num workers: auto detect num cores 
+        if num_workers is not None:
+            self.num_workers = num_workers
+        else:
+            if self.device_name == torch.device("cuda"):
+                self.num_workers = torch.cuda.get_device_properties(0).multi_processor_count
+            else:
+                self.num_workers = num_cores = os.cpu_count()
+        print(f"Number of workers: {self.num_workers}")
+
 
         # read fam and bim file
         self.geno_bed = open_bed(geno_file + ".bed")
@@ -320,13 +332,10 @@ class RHE:
         self.M[self.num_jack] = self.len_bin
 
 
-    def _pre_compute_worker(self, j):
+
+    def _pre_compute_worker(self, start_j, end_j):
         if self.multiprocessing:
             self._init_device(self.device_name)
-
-        print(f"Precompute for jackknife sample {j}")
-        np.random.seed(self.seed + j)
-        start_whole = time.time()
 
         if self.multiprocessing:
             # set up shared memory in child
@@ -358,26 +367,36 @@ class RHE:
             UXXz = self.UXXz
             XXUz = self.XXUz
             M = self.M
+        
+        for j in range(start_j, end_j):
+            print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
+            np.random.seed(self.seed + j)
+            start_whole = time.time()
 
-        subsample, sub_annot = self._get_jacknife_subsample(j)
-        start = time.time()
-        subsample = self.impute_geno(subsample, simulate_geno=True)
-        end = time.time()
-        print(f"impute time: {end - start}")
-        all_gen = self.partition_bins(subsample, sub_annot)
+            subsample, sub_annot = self._get_jacknife_subsample(j)
+            start = time.time()
+            subsample = self.impute_geno(subsample, simulate_geno=True)
+            end = time.time()
+            print(f"impute time: {end - start}")
+            all_gen = self.partition_bins(subsample, sub_annot)
 
-        for k, geno in enumerate(all_gen): 
-            X_kj = geno
-            M[j][k] = M[self.num_jack][k] - geno.shape[1]
-            for b in range(self.num_random_vec):
-                XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
-                if self.use_cov:
-                    UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                    XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-            yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+            for k, geno in enumerate(all_gen): 
+                X_kj = geno
+                M[j][k] = M[self.num_jack][k] - geno.shape[1]
+                for b in range(self.num_random_vec):
+                    XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                    if self.use_cov:
+                        UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
+                        XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+                yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
 
-        end_whole = time.time()
-        print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
+            end_whole = time.time()
+            print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
+
+    def _distribute_work(self, num_jobs, num_workers):
+        jobs_per_worker = np.ceil(num_jobs / num_workers).astype(int)
+        ranges = [(i * jobs_per_worker, min((i + 1) * jobs_per_worker, num_jobs)) for i in range(num_workers)]
+        return ranges
 
     def pre_compute(self):
 
@@ -396,10 +415,13 @@ class RHE:
 
         if self.multiprocessing:
             self._setup_shared_memory()
+            work_ranges = self._distribute_work(self.num_jack, self.num_workers)
+            print(work_ranges)
 
             processes = []
-            for j in range(self.num_jack):
-                p = multiprocessing.Process(target=self._pre_compute_worker, args=(j,))
+            
+            for (start_j, end_j) in work_ranges:
+                p = multiprocessing.Process(target=self._pre_compute_worker, args=(start_j, end_j))
                 processes.append(p)
                 p.start()
 
