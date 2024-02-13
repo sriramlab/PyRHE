@@ -39,6 +39,7 @@ def main(args):
             num_random_vec=args.num_vec,
             device=device,
             multiprocessing=args.multiprocessing,
+            num_workers=args.num_workers,
             seed=args.seed,
         )
 
@@ -108,7 +109,7 @@ if __name__ == '__main__':
     # main(args)
 
 
-    for i in range(1):
+    for i in range(25):
         args = parser.parse_args()
         if args.covariate is not None:
             cov = "_with_cov"

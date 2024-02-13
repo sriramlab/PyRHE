@@ -2,6 +2,10 @@ import time
 import torch
 from src.core.rhe import RHE
 from typing import List, Tuple
+import numpy as np
+import multiprocessing
+from multiprocessing import shared_memory
+
 
 class StreamingRHE(RHE):
     def __init__(
@@ -14,6 +18,8 @@ class StreamingRHE(RHE):
         num_jack: int = 1,
         num_random_vec: int = 10,
         device: torch.device = torch.device("cpu"),
+        num_workers: int = None,
+        multiprocessing: bool = True,
         verbose: bool = True,
         seed: int = 0,
     ):
@@ -26,49 +32,100 @@ class StreamingRHE(RHE):
             num_jack=num_jack,
             num_random_vec=num_random_vec,
             device=device,
+            num_workers=num_workers,
+            multiprocessing=multiprocessing,
             verbose=verbose,
             seed=seed
         )
     
+    def _aggregate(self):
+        self.XXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64)
+        self.yXXy_per_jack = np.zeros((self.num_bin, 2), dtype=np.float64)
+        self.UXXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
+        self.XXUz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
+        for k in range(self.num_bin):
+            self.yXXy_per_jack[k][0] = np.sum(self.yXXy[k, :])
+            for b in range(self.num_random_vec):
+                self.XXz_per_jack[k][0][b] = np.sum(self.XXz[k, :, b]) 
+                if self.UXXz_per_jack is not None: 
+                    self.UXXz_per_jack[k][0][b] = np.sum(self.UXXz[k, :, b]) 
+                if self.XXUz_per_jack is not None:
+                    self.XXUz_per_jack[k][0][b] = np.sum(self.XXUz[k, :, b])
 
-    def pre_compute(self):
-        """
-        Only Compute the Sum
-        """
-        self.XXz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64)
-        self.yXXy_per_jack = self.np.zeros((self.num_bin, 2), dtype=self.np.float64)
-        self.UXXz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64)
-        self.XXUz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64)
+    def _pre_compute_worker(self, worker_num, start_j, end_j):
+        if self.multiprocessing:
+            self._init_device(self.device_name)
+        if self.multiprocessing:
+            # set up shared memory in child
+            XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
+            XXz = np.ndarray((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
+            XXz.fill(0)
 
-        for j in range(self.num_jack):
-            print(f"Precompute (pass 1) for jackknife sample {j}")
+            yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
+            yXXy = np.ndarray((self.num_bin, self.num_workers), dtype=np.float64, buffer=yXXy_shm.buf)
+            yXXy.fill(0)
+
+            if self.use_cov:
+                UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
+                UXXz = np.ndarray((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
+                UXXz.fill(0)
+
+                XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_workers) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+                XXUz = np.ndarray((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
+                XXUz.fill(0)
+            
+            M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
+            M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
+            M.fill(0)
+            M[self.num_jack] = self.len_bin
+        else:
+            XXz_per_jack = self.XXz_per_jack
+            yXXy_per_jack = self.yXXy_per_jack
+            UXXz_per_jack = self.UXXz_per_jack
+            XXUz_per_jack = self.XXUz_per_jack
+            M = self.M
+        
+        for j in range(start_j, end_j):
+            if self.multiprocessing:
+                worker_num = worker_num
+            else:
+                worker_num = 0
+            print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
             start_whole = time.time()
             subsample, sub_annot = self._get_jacknife_subsample(j)
             subsample = self.impute_geno(subsample, simulate_geno=True)
             all_gen = self.partition_bins(subsample, sub_annot)
-                    
+
             for k, X_kj in enumerate(all_gen):
                 self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     XXz_kjb = self._compute_XXz(b, X_kj)
-                    self.XXz_per_jack[k][0][b] += XXz_kjb
+                    if self.multiprocessing:
+                        self.XXz[k][worker_num][b] += XXz_kjb
+                    else:
+                        self.XXz_per_jack[k][worker_num][b] += XXz_kjb
 
                     if self.use_cov:
                         UXXz_kjb = self._compute_UXXz(XXz_kjb)
                         XXUz_kjb = self._compute_XXUz(b, X_kj)
-                        self.UXXz_per_jack[k][0][b] += UXXz_kjb
-                        self.XXUz_per_jack[k][0][b] += XXUz_kjb
+                        if self.multiprocessing:
+                            self.UXXz[k][worker_num][b] += UXXz_kjb
+                            self.XXUz[k][worker_num][b] += XXUz_kjb
+                        else:
+                            self.UXXz_per_jack[k][worker_num][b] += UXXz_kjb
+                            self.XXUz_per_jack[k][worker_num][b] += XXUz_kjb
                 
             
                 yXXy_kj = self._compute_yXXy(X_kj, y=self.pheno)
-                self.yXXy_per_jack[k][0] += yXXy_kj[0][0]
+                if self.multiprocessing:
+                    self.yXXy[k][worker_num] += yXXy_kj[0][0]
+                else:
+                    self.yXXy_per_jack[k][worker_num] += yXXy_kj[0][0]
 
                 del X_kj
-            
-            end_whole = time.time()
-            print(f"jackknife precompute (pass 1) total time: {end_whole-start_whole}")
+    
 
-    def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
+    def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         """
         Actual RHE estimation for sigma^2
         Returns: 
@@ -110,8 +167,8 @@ class StreamingRHE(RHE):
 
 
             print(f"Estimate for jackknife sample {j}")
-            T = self.np.zeros((self.num_bin+1, self.num_bin+1))
-            q = self.np.zeros((self.num_bin+1, 1))
+            T = np.zeros((self.num_bin+1, self.num_bin+1))
+            q = np.zeros((self.num_bin+1, 1))
 
             for k_k in range(self.num_bin):
                 for k_l in range(self.num_bin): # TODO: optimize 
@@ -119,17 +176,17 @@ class StreamingRHE(RHE):
                     M_l = self.M[j][k_l]
                     B1 = self.XXz_per_jack[k_k][1]
                     B2 = self.XXz_per_jack[k_l][1]
-                    T[k_k, k_l] += self.np.sum(B1 * B2)
+                    T[k_k, k_l] += np.sum(B1 * B2)
 
                     if self.use_cov:
                         h1 = self.cov_matrix.T @ B1.T
                         h2 = self.Q @ h1
                         h3 = self.cov_matrix @ h2
-                        trkij_res1 = self.np.sum(h3.T * B2)
+                        trkij_res1 = np.sum(h3.T * B2)
 
                         B1 = self.XXUz_per_jack[k_k][1]
                         B2 = self.UXXz_per_jack[k_l][1]
-                        trkij_res2 = self.np.sum(B1 * B2)
+                        trkij_res2 = np.sum(B1 * B2)
                     
                         T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
 
@@ -148,7 +205,7 @@ class StreamingRHE(RHE):
                 else:
                     B1 = self.XXz_per_jack[k][1]
                     C1 = self.all_Uzb
-                    tk_res = self.np.sum(B1 * C1.T)
+                    tk_res = np.sum(B1 * C1.T)
                     tk_res = 1/(self.num_random_vec * M_k) * tk_res
 
                     T[k, self.num_bin] = self.num_indv - tk_res
@@ -165,11 +222,11 @@ class StreamingRHE(RHE):
 
             if method == "lstsq":
                 sigma_est = self.solve_linear_equation(T,q)
-                sigma_est = self.np.ravel(sigma_est).tolist()
+                sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             elif method == "QR":
                 sigma_est = self.solve_linear_qr(T,q)
-                sigma_est = self.np.ravel(sigma_est).tolist()
+                sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             else:
                 raise ValueError("Unsupported method for solving linear equation")
@@ -178,7 +235,7 @@ class StreamingRHE(RHE):
             end_whole = time.time()
             print(f"estimate time for jackknife subsample: {end_whole - start_whole}")
             
-        sigma_ests = self.np.array(sigma_ests)
+        sigma_ests = np.array(sigma_ests)
 
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
             

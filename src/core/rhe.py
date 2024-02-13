@@ -41,8 +41,7 @@ class RHE:
     
         # Seed
         self.seed = seed
-        np.random.seed(seed)
-
+        np.random.seed(self.seed)
 
         self.num_bin= num_bin
         self.num_jack = num_jack
@@ -304,23 +303,22 @@ class RHE:
         v = mat_mul(X_kj.T, pheno, device=self.device)
         return mat_mul(v.T, v, device=self.device)
 
-
-    def _setup_shared_memory(self):
-        self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
-        self.XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
+    def _setup_shared_memory(self, num_blocks):
+        self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
+        self.XXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
         self.XXz.fill(0)
 
-        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * np.float64().itemsize)
-        self.yXXy = np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=self.yXXy_shm.buf)
+        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * np.float64().itemsize)
+        self.yXXy = np.ndarray((self.num_bin, num_blocks), dtype=np.float64, buffer=self.yXXy_shm.buf)
         self.yXXy.fill(0)
 
         if self.use_cov:
-            self.UXXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
-            self.UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.UXXz_shm.buf)
+            self.UXXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+            self.UXXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.UXXz_shm.buf)
             self.UXXz.fill(0)
 
-            self.XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
-            self.XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXUz_shm.buf)
+            self.XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
+            self.XXUz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXUz_shm.buf)
             self.XXUz.fill(0)
         else:
             self.UXXz = None
@@ -332,8 +330,7 @@ class RHE:
         self.M[self.num_jack] = self.len_bin
 
 
-
-    def _pre_compute_worker(self, start_j, end_j):
+    def _pre_compute_worker(self, worker_num, start_j, end_j):
         if self.multiprocessing:
             self._init_device(self.device_name)
 
@@ -399,6 +396,8 @@ class RHE:
         return ranges
 
     def pre_compute(self):
+        from . import StreamingRHE
+        num_block = self.num_workers if isinstance(self, StreamingRHE) else self.num_jack + 1
 
         def _signal_handler(sig, frame):
             for p in processes:
@@ -414,56 +413,67 @@ class RHE:
         start_whole = time.time()
 
         if self.multiprocessing:
-            self._setup_shared_memory()
+            self._setup_shared_memory(num_block)
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
             print(work_ranges)
 
             processes = []
             
-            for (start_j, end_j) in work_ranges:
-                p = multiprocessing.Process(target=self._pre_compute_worker, args=(start_j, end_j))
+            for worker_num, (start_j, end_j) in enumerate(work_ranges):
+                p = multiprocessing.Process(target=self._pre_compute_worker, args=(worker_num, start_j, end_j))
                 processes.append(p)
                 p.start()
 
             for p in tqdm(processes, desc="Preprocessing jackknife subsamples..."):
                 p.join()
+        
+            if isinstance(self, StreamingRHE): 
+                self._aggregate()
              
         else:
+            if isinstance(self, StreamingRHE):
+                self.XXz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64)
+                self.yXXy_per_jack = self.np.zeros((self.num_bin, 2), dtype=self.np.float64)
+                self.UXXz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
+                self.XXUz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
 
-            self.XXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64)
-            self.yXXy = np.zeros((self.num_bin, self.num_jack + 1), dtype=np.float64)
-            self.UXXz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
-            self.XXUz = np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
+            else:
+                self.XXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64)
+                self.yXXy = np.zeros((self.num_bin, num_block), dtype=np.float64)
+                self.UXXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
+                self.XXUz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
 
+            # TODO: test
             for j in tqdm(range(self.num_jack), desc="Preprocessing jackknife subsamples..."):
-                self._pre_compute_worker(j)
+                self._pre_compute_worker(j, j + 1)
 
         end_whole = time.time()
 
         print(f"Precompute total time: {end_whole - start_whole}")
 
-        for k in range(self.num_bin):
-            for j in range(self.num_jack):
-                for b in range (self.num_random_vec):
-                    self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
-                self.yXXy[k][self.num_jack] += self.yXXy[k][j]
-            
-            for j in range(self.num_jack):
-                for b in range (self.num_random_vec):
-                    self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
-                self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
-        
-        if self.use_cov:
+        if not isinstance(self, StreamingRHE): 
             for k in range(self.num_bin):
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
-                        self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
-                        self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
-                                        
+                        self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
+                    self.yXXy[k][self.num_jack] += self.yXXy[k][j]
+                
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
-                        self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
-                        self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
+                        self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
+                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
+            
+            if self.use_cov:
+                for k in range(self.num_bin):
+                    for j in range(self.num_jack):
+                        for b in range (self.num_random_vec):
+                            self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
+                            self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
+                                            
+                    for j in range(self.num_jack):
+                        for b in range (self.num_random_vec):
+                            self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
+                            self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
     def _finalize(self):
         self.XXz_shm.close()
@@ -483,7 +493,7 @@ class RHE:
         self.M_shm.unlink()
         
      
-    def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
+    def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         """
         Actual RHE estimation for sigma^2
         Returns: 
@@ -678,9 +688,7 @@ class RHE:
         """
         whole RHE process for printing etc
         """
-
         self.pre_compute()
-
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
 
         sig_errs = self.estimate_error(sigma_est_jackknife)
@@ -704,6 +712,8 @@ class RHE:
 
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
+        
+        self._finalize()
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
