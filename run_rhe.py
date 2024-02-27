@@ -3,7 +3,7 @@ import os
 import torch
 import numpy as np
 from src.core import RHE, StreamingRHE
-from constant import DATA_DIR, RESULT_DIR
+from constant import DATA_DIR, RESULT_DIR, HOME_DIR
 import json
 import time
 
@@ -87,7 +87,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
-    parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
+    parser.add_argument('--geno', '-g', type=str, default=f"{HOME_DIR}_data/200k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
