@@ -1,7 +1,6 @@
 import torch
     
 def to_tensor(mat, device):
-    print("*********", device)
     return torch.from_numpy(mat).float().to(device)
 
 def mat_mul(*mats, device, to_numpy=True):

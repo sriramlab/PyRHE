@@ -109,7 +109,7 @@ if __name__ == '__main__':
     # main(args)
 
 
-    for i in range(25):
+    for i in range(1):
         args = parser.parse_args()
         if args.covariate is not None:
             cov = "_with_cov"

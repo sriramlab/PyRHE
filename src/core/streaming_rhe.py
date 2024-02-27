@@ -97,11 +97,11 @@ class StreamingRHE(RHE):
             all_gen = self.partition_bins(subsample, sub_annot)
 
             for k, X_kj in enumerate(all_gen):
-                self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1] # store the dimension with the corresponding block
+                M[j][k] = M[self.num_jack][k] - X_kj.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     XXz_kjb = self._compute_XXz(b, X_kj)
                     if self.multiprocessing:
-                        self.XXz[k][worker_num][b] += XXz_kjb
+                        XXz[k][worker_num][b] += XXz_kjb
                     else:
                         self.XXz_per_jack[k][worker_num][b] += XXz_kjb
 
@@ -109,8 +109,8 @@ class StreamingRHE(RHE):
                         UXXz_kjb = self._compute_UXXz(XXz_kjb)
                         XXUz_kjb = self._compute_XXUz(b, X_kj)
                         if self.multiprocessing:
-                            self.UXXz[k][worker_num][b] += UXXz_kjb
-                            self.XXUz[k][worker_num][b] += XXUz_kjb
+                            UXXz[k][worker_num][b] += UXXz_kjb
+                            XXUz[k][worker_num][b] += XXUz_kjb
                         else:
                             self.UXXz_per_jack[k][worker_num][b] += UXXz_kjb
                             self.XXUz_per_jack[k][worker_num][b] += XXUz_kjb
@@ -118,12 +118,21 @@ class StreamingRHE(RHE):
             
                 yXXy_kj = self._compute_yXXy(X_kj, y=self.pheno)
                 if self.multiprocessing:
-                    self.yXXy[k][worker_num] += yXXy_kj[0][0]
+                    yXXy[k][worker_num] += yXXy_kj[0][0]
                 else:
                     self.yXXy_per_jack[k][worker_num] += yXXy_kj[0][0]
 
                 del X_kj
-    
+
+            end_whole = time.time()
+            print(f"jackknife {j} precompute (pass 1) total time: {end_whole-start_whole}")
+
+
+    # def _estimate_worker(self, start_j, end_j):
+
+
+
+
 
     def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         """
@@ -140,6 +149,7 @@ class StreamingRHE(RHE):
             sigma^2 for the whole genotype matrix [sigma_1^2 sigma_2^2 ... sigma_e^2]
 
         """
+        print(self.XXz_per_jack)
         sigma_ests = []
 
         for j in range(self.num_jack + 1):

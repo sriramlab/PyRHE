@@ -413,7 +413,8 @@ class RHE:
         start_whole = time.time()
 
         if self.multiprocessing:
-            multiprocessing.set_start_method('spawn')
+            if self.device == torch.device("cuda"):
+                multiprocessing.set_start_method('spawn')
             self._setup_shared_memory(num_block)
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
             print(work_ranges)
@@ -477,6 +478,7 @@ class RHE:
                             self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
     def _finalize(self):
+        print("******", self.XXz_shm.name)
         self.XXz_shm.close()
         self.yXXy_shm.close()
         if self.use_cov:
@@ -509,6 +511,7 @@ class RHE:
             sigma^2 for the whole genotype matrix [sigma_1^2 sigma_2^2 ... sigma_e^2]
 
         """
+        print(self.XXz)
         sigma_ests = []
 
         for j in range(self.num_jack + 1):
@@ -714,7 +717,7 @@ class RHE:
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
         
-        self._finalize()
+        # self._finalize()
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
