@@ -54,7 +54,7 @@ class StreamingRHE(RHE):
 
     def _pre_compute_worker(self, worker_num, start_j, end_j):
         if self.multiprocessing:
-            self._init_device(self.device_name)
+            self._init_device(self.device_name, self.cuda_num)
         if self.multiprocessing:
             # set up shared memory in child
             XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
@@ -215,7 +215,6 @@ class StreamingRHE(RHE):
                 sigma_ests.append(sigma_est)
             else:
                 raise ValueError("Unsupported method for solving linear equation")
-            
 
             end_whole = time.time()
             print(f"estimate time for jackknife subsample: {end_whole - start_whole}")
@@ -247,8 +246,6 @@ class StreamingRHE(RHE):
                 results.append(result_queue.get())
             results.sort(key=lambda x: x[0])
             all_results = [item for _, result in results for item in result]
-
-            
 
         else:
             # TODO

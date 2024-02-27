@@ -28,6 +28,7 @@ class RHE:
         num_jack: int = 1,
         num_random_vec: int = 10,
         device: str = "cpu",
+        cuda_num: int = None,
         num_workers: int = None,
         multiprocessing: bool = True,
         verbose: bool = True,
@@ -54,15 +55,14 @@ class RHE:
         else:
             self.num_bin = None
 
-        # init device
-        self.device_name = device
-        self._init_device(self.device_name)
+        self.device_name, self.cuda_num = device, cuda_num
+        self._init_device(self.device_name, self.cuda_num)
 
         # num workers: auto detect num cores 
         if num_workers is not None:
             self.num_workers = num_workers
         else:
-            if self.device_name == torch.device("cuda"):
+            if self.device == torch.device("cuda"):
                 self.num_workers = torch.cuda.get_device_properties(0).multi_processor_count
             else:
                 self.num_workers = num_cores = os.cpu_count()
@@ -120,13 +120,19 @@ class RHE:
             atexit.register(self._finalize)
     
 
-    def _init_device(self, device):
-        # if torch.cuda.is_available(): # TODO: fixed
-        #     self.device = torch.device("cuda")
-        # else:
-        #     self.device = torch.device("cpu")
-         self.device = torch.device("cpu")
-    
+    def _init_device(self, device, cuda_num):
+        if device != "cpu":
+            if not torch.cuda.is_available():
+                print("cuda not available, fall back to cpu")
+                self.device = torch.device("cpu")
+            else:
+                if cuda_num is not None and cuda_num > -1:
+                    self.device = torch.device(f"cuda:{cuda_num}")
+                else:
+                    self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+        print(f"Using device {self.device}")
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -333,64 +339,69 @@ class RHE:
 
 
     def _pre_compute_worker(self, worker_num, start_j, end_j):
-        if self.multiprocessing:
-            self._init_device(self.device_name)
+        try:
+            if self.multiprocessing:
+                self._init_device(self.device_name, self.cuda_num)
 
-        if self.multiprocessing:
-            # set up shared memory in child
-            XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
-            XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
-            XXz.fill(0)
+            if self.multiprocessing:
+                # set up shared memory in child
+                XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
+                print("**************name", self.XXz_shm.name)
+                XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
+                XXz.fill(0)
 
-            yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
-            yXXy = np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=yXXy_shm.buf)
-            yXXy.fill(0)
+                yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
+                yXXy = np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=yXXy_shm.buf)
+                yXXy.fill(0)
 
-            if self.use_cov:
-                UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
-                UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
-                UXXz.fill(0)
+                if self.use_cov:
+                    UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
+                    UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
+                    UXXz.fill(0)
 
-                XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
-                XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
-                XXUz.fill(0)
+                    XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+                    XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
+                    XXUz.fill(0)
+                
+                M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
+                M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
+                M.fill(0)
+                M[self.num_jack] = self.len_bin
+
+            else:
+                XXz = self.XXz
+                yXXy = self.yXXy
+                UXXz = self.UXXz
+                XXUz = self.XXUz
+                M = self.M
             
-            M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
-            M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
-            M.fill(0)
-            M[self.num_jack] = self.len_bin
+            for j in range(start_j, end_j):
+                print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
+                np.random.seed(self.seed + j)
+                start_whole = time.time()
 
-        else:
-            XXz = self.XXz
-            yXXy = self.yXXy
-            UXXz = self.UXXz
-            XXUz = self.XXUz
-            M = self.M
-        
-        for j in range(start_j, end_j):
-            print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
-            np.random.seed(self.seed + j)
-            start_whole = time.time()
+                subsample, sub_annot = self._get_jacknife_subsample(j)
+                start = time.time()
+                subsample = self.impute_geno(subsample, simulate_geno=True)
+                end = time.time()
+                print(f"impute time: {end - start}")
+                all_gen = self.partition_bins(subsample, sub_annot)
 
-            subsample, sub_annot = self._get_jacknife_subsample(j)
-            start = time.time()
-            subsample = self.impute_geno(subsample, simulate_geno=True)
-            end = time.time()
-            print(f"impute time: {end - start}")
-            all_gen = self.partition_bins(subsample, sub_annot)
+                for k, geno in enumerate(all_gen): 
+                    X_kj = geno
+                    M[j][k] = M[self.num_jack][k] - geno.shape[1]
+                    for b in range(self.num_random_vec):
+                        XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                        if self.use_cov:
+                            UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
+                            XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+                    yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
 
-            for k, geno in enumerate(all_gen): 
-                X_kj = geno
-                M[j][k] = M[self.num_jack][k] - geno.shape[1]
-                for b in range(self.num_random_vec):
-                    XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
-                    if self.use_cov:
-                        UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                        XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-                yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+                end_whole = time.time()
+                print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
+        except Exception as e:
+            print(f"Error in worker {worker_num} processing range {start_j}-{end_j}: {e}")
 
-            end_whole = time.time()
-            print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
 
     def _distribute_work(self, num_jobs, num_workers):
         jobs_per_worker = np.ceil(num_jobs / num_workers).astype(int)
@@ -401,16 +412,16 @@ class RHE:
         from . import StreamingRHE
         num_block = self.num_workers if isinstance(self, StreamingRHE) else self.num_jack + 1
 
-        # def _signal_handler(sig, frame):
-        #     for p in processes:
-        #         try:
-        #             if p.is_alive() and p._popen is not None:
-        #                 p.terminate()
-        #         except AssertionError:
-        #             pass            
-        #     sys.exit(0)
+        def _signal_handler(sig, frame):
+            for p in processes:
+                try:
+                    if p.is_alive() and p._popen is not None:
+                        p.terminate()
+                except AssertionError:
+                    pass    
+            sys.exit(1)
         
-        # signal.signal(signal.SIGINT, _signal_handler)
+        signal.signal(signal.SIGINT, _signal_handler)
 
         start_whole = time.time()
 
@@ -427,9 +438,17 @@ class RHE:
                 p = multiprocessing.Process(target=self._pre_compute_worker, args=(worker_num, start_j, end_j))
                 processes.append(p)
                 p.start()
-
-            for p in tqdm(processes, desc="Preprocessing jackknife subsamples..."):
-                p.join()
+            try: 
+                for p in tqdm(processes, desc="Preprocessing jackknife subsamples..."):
+                    p.join()
+                    if p.exitcode != 0:     
+                        raise Exception
+            except Exception as e:
+                print(e)
+                for p in processes:  
+                    if p.is_alive():
+                        p.terminate()
+                sys.exit(1) 
         
             if isinstance(self, StreamingRHE): 
                 self._aggregate()
@@ -480,7 +499,6 @@ class RHE:
                             self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
     def _finalize(self):
-        print("******", self.XXz_shm.name)
         self.XXz_shm.close()
         self.yXXy_shm.close()
         if self.use_cov:

@@ -13,16 +13,16 @@ def main(args):
     print(args)
 
     # Device
-    device = "cpu"
-    if torch.cuda.is_available():
-        if args.device >= 0:
-            device = f"cuda:{args.device}"
-        else:
-            device = "cuda"
-    else:
-        print("cuda not available, fall back to cpu")
-        device = "cpu"
-    device = torch.device(device)
+    # device = "cpu"
+    # if torch.cuda.is_available():
+    #     if args.device >= 0:
+    #         device = f"cuda:{args.device}"
+    #     else:
+    #         device = "cuda"
+    # else:
+    #     print("cuda not available, fall back to cpu")
+    #     device = "cpu"
+    # device = torch.device(device)
 
     pheno_file = args.pheno
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
@@ -37,7 +37,7 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
-            device=device,
+            device=args.device,
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
@@ -52,7 +52,7 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
-            device=device,
+            device=args.device,
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
@@ -100,7 +100,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=10, help='Number of workers')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
     parser.add_argument('--seed', default=0, help='Random seed')
-    parser.add_argument('--device', type=int, default=-1, help="gpu number")
+    parser.add_argument('--device', type=str, default="cpu", help="device to use")
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
 
     
