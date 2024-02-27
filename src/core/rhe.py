@@ -1,3 +1,4 @@
+import os
 import time
 import sys
 import signal
@@ -120,10 +121,11 @@ class RHE:
     
 
     def _init_device(self, device):
-        if torch.cuda.is_available(): # TODO: fixed
-            self.device = torch.device("cuda")
-        else:
-            self.device = torch.device("cpu")
+        # if torch.cuda.is_available(): # TODO: fixed
+        #     self.device = torch.device("cuda")
+        # else:
+        #     self.device = torch.device("cpu")
+         self.device = torch.device("cpu")
     
     
     def simulate_pheno(self, sigma_list: List):
@@ -399,16 +401,16 @@ class RHE:
         from . import StreamingRHE
         num_block = self.num_workers if isinstance(self, StreamingRHE) else self.num_jack + 1
 
-        def _signal_handler(sig, frame):
-            for p in processes:
-                try:
-                    if p.is_alive() and p._popen is not None:
-                        p.terminate()
-                except AssertionError:
-                    pass            
-            sys.exit(0)
+        # def _signal_handler(sig, frame):
+        #     for p in processes:
+        #         try:
+        #             if p.is_alive() and p._popen is not None:
+        #                 p.terminate()
+        #         except AssertionError:
+        #             pass            
+        #     sys.exit(0)
         
-        signal.signal(signal.SIGINT, _signal_handler)
+        # signal.signal(signal.SIGINT, _signal_handler)
 
         start_whole = time.time()
 
