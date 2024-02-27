@@ -12,7 +12,7 @@ from src.util.file_processing import *
 from tqdm import tqdm
 import multiprocessing
 from multiprocessing import shared_memory
-
+from src.core.mp_handler import MultiprocessingHandler
 from src.util.mat_mul import *
 
 
@@ -412,43 +412,18 @@ class RHE:
         from . import StreamingRHE
         num_block = self.num_workers if isinstance(self, StreamingRHE) else self.num_jack + 1
 
-        def _signal_handler(sig, frame):
-            for p in processes:
-                try:
-                    if p.is_alive() and p._popen is not None:
-                        p.terminate()
-                except AssertionError:
-                    pass    
-            sys.exit(1)
-        
-        signal.signal(signal.SIGINT, _signal_handler)
-
         start_whole = time.time()
 
         if self.multiprocessing:
-            if self.device == torch.device("cuda"):
-                multiprocessing.set_start_method('spawn')
             self._setup_shared_memory(num_block)
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
             print(work_ranges)
 
             processes = []
             
-            for worker_num, (start_j, end_j) in enumerate(work_ranges):
-                p = multiprocessing.Process(target=self._pre_compute_worker, args=(worker_num, start_j, end_j))
-                processes.append(p)
-                p.start()
-            try: 
-                for p in tqdm(processes, desc="Preprocessing jackknife subsamples..."):
-                    p.join()
-                    if p.exitcode != 0:     
-                        raise Exception
-            except Exception as e:
-                print(e)
-                for p in processes:  
-                    if p.is_alive():
-                        p.terminate()
-                sys.exit(1) 
+            mp_handler = MultiprocessingHandler(target=self._pre_compute_worker, work_ranges=work_ranges, device=self.device)
+            mp_handler.start_processes()
+            mp_handler.join_processes()
         
             if isinstance(self, StreamingRHE): 
                 self._aggregate()

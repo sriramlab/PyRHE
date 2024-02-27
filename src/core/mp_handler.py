@@ -6,9 +6,8 @@ from tqdm import tqdm
 import torch
 
 class MultiprocessingHandler:
-    def __init__(self, target, num_workers, work_ranges, device):
+    def __init__(self, target, work_ranges, device):
         self.target = target
-        self.num_workers = num_workers
         self.work_ranges = work_ranges
         self.device = device
         self.processes = []
