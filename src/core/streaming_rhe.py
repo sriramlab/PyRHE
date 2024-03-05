@@ -74,7 +74,7 @@ class StreamingRHE(RHE):
                 UXXz = np.ndarray((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
                 UXXz.fill(0)
 
-                XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_workers) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+                XXUz_shm = shared_memory.SharedMemory(name=self.XXUz_shm.name)
                 XXUz = np.ndarray((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
                 XXUz.fill(0)
             
@@ -264,7 +264,6 @@ class StreamingRHE(RHE):
             trace_dict = {} if self.get_trace else None
             pass
 
-        print(trace_dict)
         if self.get_trace:
             self.get_trace_summary(trace_dict)
 

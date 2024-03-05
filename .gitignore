@@ -12,6 +12,7 @@ generated_annot
 *.bim
 *.fam
 *.phen
+*.covar
 
 *.json
 *.pkl

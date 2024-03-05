@@ -5,7 +5,7 @@ import argparse
 import sys
 import os
 import numpy as np
-sys.path.insert(0, '/u/home/j/jiayini/project-sriram/RHE_project')
+sys.path.insert(0, '/home/jiayini1119/RHE_project')
 from src.util.file_processing import read_pheno, read_cov
 
 def simulate_pheno(pheno_file, cov_file, output_file):
@@ -15,7 +15,9 @@ def simulate_pheno(pheno_file, cov_file, output_file):
     data = [line.strip().split() for line in lines[1:]]
 
     y = read_pheno(pheno_file)
+    print(y.shape)
     cov = read_cov(std=True, filename=cov_file)
+    print(cov.shape[0])
     print(cov.shape[1])
     Ncov = cov.shape[1]
     y_new = y + cov @ np.ones((Ncov, 1))
@@ -27,15 +29,15 @@ def simulate_pheno(pheno_file, cov_file, output_file):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Simulate phenotype data with covariates.')
-    parser.add_argument('--num_bins', '-b', type=int, help='Number of bins to process')
+    parser.add_argument('--num_bins', '-b', type=int, default=1, help='Number of bins to process')
 
     args = parser.parse_args()
 
-    pheno_dir = f'/u/home/j/jiayini/project-sriram/RHE_project/data/pheno/bin_{args.num_bins}'
-    output_dir = f'/u/home/j/jiayini/project-sriram/RHE_project/data/pheno_with_cov/bin_{args.num_bins}'
+    pheno_dir = f'/home/jiayini1119/RHE_project/data_200k/pheno/bin_{args.num_bins}'
+    output_dir = f'/home/jiayini1119/RHE_project/data_200k/pheno_with_cov/bin_{args.num_bins}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    covariate_file = '/u/home/j/jiayini/project-sriram/RHE_project/data/cov_25k.cov'
+    covariate_file = '/home/jiayini1119/RHE_project/data_200k/200k.height.covar'
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

@@ -28,6 +28,7 @@ rhe = StreamingRHE(
     num_jack=8,
     num_workers=2,
     get_trace=True,
+    multiprocessing=False,
 )
 
 print("Simulating Phenotype...")

@@ -127,10 +127,9 @@ class RHE:
         # trace info
         self.get_trace = get_trace
         self.trace_dir = trace_dir
-        # if self.get_trace:
-            # if self.num_bin > 1:
-            #     raise ValueError("Save trace failed, only supports saving tracing for single bin case.")
-                
+        if self.get_trace:
+            if self.num_bin > 1:
+                raise ValueError("Save trace failed, only supports saving tracing for single bin case.")
 
         # atexit
         if self.multiprocessing:
@@ -240,20 +239,20 @@ class RHE:
         return X_imp
 
     def solve_linear_equation(self, X, y):
-            '''
-            Solve least square
-            '''
-            sigma = np.linalg.lstsq(X, y, rcond=None)[0]
-            return sigma
+        '''
+        Solve least square
+        '''
+        sigma = np.linalg.lstsq(X, y, rcond=None)[0]
+        return sigma
 
 
     def solve_linear_qr(self, X, y):
-            '''
-            Solve least square using QR decomposition
-            '''
-            Q, R = scipy.linalg.qr(X)
-            sigma = scipy.linalg.solve_triangular(R, np.dot(Q.T, y))
-            return sigma
+        '''
+        Solve least square using QR decomposition
+        '''
+        Q, R = scipy.linalg.qr(X)
+        sigma = scipy.linalg.solve_triangular(R, np.dot(Q.T, y))
+        return sigma
 
 
     def _bin_to_snp(self, annot): 
@@ -317,11 +316,11 @@ class RHE:
         return (mat_mul(X_kj, mat_mul(X_kj.T, random_vec, device=self.device), device=self.device)).flatten()
     
     def _compute_UXXz(self, XXz_kjb):
-        return mat_mul(self.cov_matrix, mat_mul(self.Q, mat_mul(self.cov_matrix.T, XXz_kjb)), device=self.device).flatten()
+        return mat_mul(self.cov_matrix, mat_mul(self.Q, mat_mul(self.cov_matrix.T, XXz_kjb, device=self.device), device=self.device), device=self.device).flatten()
     
     def _compute_XXUz(self, b, X_kj):
         random_vec_cov = self.all_Uzb[:, b].reshape(-1, 1)
-        return mat_mul(X_kj, mat_mul(X_kj.T, random_vec_cov), device=self.device).flatten()  
+        return mat_mul(X_kj, mat_mul(X_kj.T, random_vec_cov, device=self.device), device=self.device).flatten()  
 
     def _compute_yXXy(self, X_kj, y):
         pheno = y if not self.use_cov else self.regress_pheno(self.cov_matrix, y)
@@ -375,7 +374,7 @@ class RHE:
                     UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
                     UXXz.fill(0)
 
-                    XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (self.num_jack + 1) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+                    XXUz_shm = shared_memory.SharedMemory(name=self.XXUz_shm.name)
                     XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
                     XXUz.fill(0)
                 
