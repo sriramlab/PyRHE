@@ -1,5 +1,7 @@
 import time
 import torch
+import queue
+from tqdm import tqdm
 from src.core.rhe import RHE
 from typing import List, Tuple
 import numpy as np
@@ -56,7 +58,7 @@ class StreamingRHE(RHE):
                 if self.XXUz_per_jack is not None:
                     self.XXUz_per_jack[k, 0, b, :] = np.sum(self.XXUz[k, 0, b, :], axis=0)
 
-    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue):
+    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue=None):
         if self.multiprocessing:
             self._init_device(self.device_name, self.cuda_num)
         if self.multiprocessing:
@@ -83,7 +85,6 @@ class StreamingRHE(RHE):
             M.fill(0)
             M[self.num_jack] = self.len_bin
         else:
-            total_sample_queue = Queue() # TODO
             XXz_per_jack = self.XXz_per_jack
             yXXy_per_jack = self.yXXy_per_jack
             UXXz_per_jack = self.UXXz_per_jack
@@ -99,7 +100,10 @@ class StreamingRHE(RHE):
             start_whole = time.time()
             subsample, sub_annot = self._get_jacknife_subsample(j)
             subsample = self.impute_geno(subsample, simulate_geno=True)
-            total_sample_queue.put((worker_num, subsample.shape[0]))
+            if total_sample_queue is not None:
+                total_sample_queue.put((worker_num, subsample.shape[0]))
+            else:
+                self.total_num_sample = subsample.shape[0]
             all_gen = self.partition_bins(subsample, sub_annot)
 
             for k, X_kj in enumerate(all_gen):
@@ -165,7 +169,7 @@ class StreamingRHE(RHE):
             q = np.zeros((self.num_bin+1, 1))
 
             for k_k in range(self.num_bin):
-                for k_l in range(self.num_bin): # TODO: optimize 
+                for k_l in range(self.num_bin): 
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
                     B1 = self.XXz_per_jack[k_k][1]
@@ -252,20 +256,21 @@ class StreamingRHE(RHE):
             for p in processes:
                 p.join()
 
-            # Aggregate results
-            results = []
-            while not result_queue.empty():
-                results.append(result_queue.get())
-            results.sort(key=lambda x: x[0])
-            all_results = [item for _, result in results for item in result]
-
         else:
-            # TODO
+            result_queue = queue.Queue()
             trace_dict = {} if self.get_trace else None
-            pass
+            for j in tqdm(range(self.num_jack + 1), desc="Estimating..."):
+                self._estimate_worker(0, method, j, j + 1, result_queue, trace_dict)
 
         if self.get_trace:
             self.get_trace_summary(trace_dict)
+
+        # Aggregate results
+        results = []
+        while not result_queue.empty():
+            results.append(result_queue.get())
+        results.sort(key=lambda x: x[0])
+        all_results = [item for _, result in results for item in result]
 
         sigma_ests = np.array(all_results)
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]

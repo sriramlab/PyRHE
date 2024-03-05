@@ -354,7 +354,7 @@ class RHE:
         self.M[self.num_jack] = self.len_bin
 
 
-    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue):
+    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue=None):
         try:
             if self.multiprocessing:
                 self._init_device(self.device_name, self.cuda_num)
@@ -384,7 +384,6 @@ class RHE:
                 M[self.num_jack] = self.len_bin
 
             else:
-                total_sample_queue = Queue() # TODO
                 XXz = self.XXz
                 yXXy = self.yXXy
                 UXXz = self.UXXz
@@ -401,7 +400,10 @@ class RHE:
                 subsample = self.impute_geno(subsample, simulate_geno=True)
 
                 # save to the total sample
-                total_sample_queue.put((worker_num, subsample.shape[0]))
+                if total_sample_queue is not None:
+                    total_sample_queue.put((worker_num, subsample.shape[0]))
+                else:
+                    self.total_num_sample = subsample.shape[0]
 
                 end = time.time()
                 print(f"impute time: {end - start}")
@@ -453,10 +455,10 @@ class RHE:
              
         else:
             if isinstance(self, StreamingRHE):
-                self.XXz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64)
-                self.yXXy_per_jack = self.np.zeros((self.num_bin, 2), dtype=self.np.float64)
-                self.UXXz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
-                self.XXUz_per_jack = self.np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
+                self.XXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64)
+                self.yXXy_per_jack = np.zeros((self.num_bin, 2), dtype=np.float64)
+                self.UXXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
+                self.XXUz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
 
             else:
                 self.XXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64)
@@ -464,9 +466,8 @@ class RHE:
                 self.UXXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
                 self.XXUz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
 
-            # TODO: test
             for j in tqdm(range(self.num_jack), desc="Preprocessing jackknife subsamples..."):
-                self._pre_compute_worker(j, j + 1)
+                self._pre_compute_worker(0, j, j + 1)
 
         end_whole = time.time()
 
@@ -745,8 +746,8 @@ class RHE:
         whole RHE process for printing etc
         """
         self.pre_compute()
-        sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
 
+        sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
         sig_errs = self.estimate_error(sigma_est_jackknife)
 
         for i, est in enumerate(sigma_ests_total):
@@ -756,25 +757,15 @@ class RHE:
                 print(f"sigma^2 estimate for bin {i}: {est}, SE: {sig_errs[i]}")
         
         h2_jackknife, h2_total = self.compute_h2(sigma_est_jackknife, sigma_ests_total)
-
         h2_errs = self.estimate_error(h2_jackknife)
 
         for i, est_h2 in enumerate(h2_total):
             print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs[i]}")
 
         enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
-
         enrichment_errs = self.estimate_error(enrichment_jackknife)
 
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
-        
-        # self._finalize()
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
-
-    # TODO: fix for streaming version
-    def get_yxxy(self):
-        if not self.yXXy:  
-            raise ValueError("yxxy has not been computed yet")
-        return self.yXXy
