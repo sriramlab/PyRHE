@@ -41,6 +41,7 @@ def main(args):
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
+            trace_dir=args.get_trace,
         )
 
     else:
@@ -56,6 +57,7 @@ def main(args):
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
+            get_trace=args.get_trace,
         )
 
     # RHE
@@ -91,6 +93,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--multiprocessing', action='store_true', help='use streaming version')
+    parser.add_argument('--get_trace', action='store_true', help='get the trace estimate')
 
     parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')

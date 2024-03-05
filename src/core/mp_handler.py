@@ -11,6 +11,7 @@ class MultiprocessingHandler:
         self.work_ranges = work_ranges
         self.device = device
         self.processes = []
+        self.result_queue = multiprocessing.Queue()
 
     def _signal_handler(self, sig, frame):
         for p in self.processes:
@@ -26,7 +27,7 @@ class MultiprocessingHandler:
         if self.device == torch.device("cuda"):
             multiprocessing.set_start_method('spawn', force=True)
         for worker_num, (start_j, end_j) in enumerate(self.work_ranges):
-            p = multiprocessing.Process(target=self.target, args=(worker_num, start_j, end_j))
+            p = multiprocessing.Process(target=self.target, args=(worker_num, start_j, end_j, self.result_queue))
             self.processes.append(p)
             p.start()
 
@@ -42,3 +43,9 @@ class MultiprocessingHandler:
                 if p.is_alive():
                     p.terminate()
             sys.exit(1)
+    
+    def get_queue(self):
+        results = []
+        while not self.result_queue.empty():
+            results.append(self.result_queue.get())
+        return results

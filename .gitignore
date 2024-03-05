@@ -15,5 +15,7 @@ generated_annot
 
 *.json
 *.pkl
+*.NM
+*.trace
 
 .env

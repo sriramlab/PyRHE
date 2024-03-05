@@ -22,6 +22,8 @@ class StreamingRHE(RHE):
         multiprocessing: bool = True,
         verbose: bool = True,
         seed: int = 0,
+        get_trace: bool = False,
+        trace_dir: str = None,
     ):
         super().__init__(
             geno_file=geno_file,
@@ -35,7 +37,9 @@ class StreamingRHE(RHE):
             num_workers=num_workers,
             multiprocessing=multiprocessing,
             verbose=verbose,
-            seed=seed
+            seed=seed,
+            get_trace=get_trace,
+            trace_dir=trace_dir
         )
     
     def _aggregate(self):
@@ -52,7 +56,7 @@ class StreamingRHE(RHE):
                 if self.XXUz_per_jack is not None:
                     self.XXUz_per_jack[k, 0, b, :] = np.sum(self.XXUz[k, 0, b, :], axis=0)
 
-    def _pre_compute_worker(self, worker_num, start_j, end_j):
+    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue):
         if self.multiprocessing:
             self._init_device(self.device_name, self.cuda_num)
         if self.multiprocessing:
@@ -79,6 +83,7 @@ class StreamingRHE(RHE):
             M.fill(0)
             M[self.num_jack] = self.len_bin
         else:
+            total_sample_queue = Queue() # TODO
             XXz_per_jack = self.XXz_per_jack
             yXXy_per_jack = self.yXXy_per_jack
             UXXz_per_jack = self.UXXz_per_jack
@@ -94,6 +99,7 @@ class StreamingRHE(RHE):
             start_whole = time.time()
             subsample, sub_annot = self._get_jacknife_subsample(j)
             subsample = self.impute_geno(subsample, simulate_geno=True)
+            total_sample_queue.put((worker_num, subsample.shape[0]))
             all_gen = self.partition_bins(subsample, sub_annot)
 
             for k, X_kj in enumerate(all_gen):
@@ -128,7 +134,7 @@ class StreamingRHE(RHE):
             print(f"jackknife {j} precompute (pass 1) total time: {end_whole-start_whole}")
 
 
-    def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue):
+    def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue, trace_dict):
         sigma_ests = []
         for j in range(start_j, end_j):
             print(f"Precompute (pass 2) for jackknife sample {j}")
@@ -202,6 +208,10 @@ class StreamingRHE(RHE):
                 q[k] = self.yXXy_per_jack[k][1] / M_k if M_k != 0 else 0
     
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
+
+            if trace_dict is not None:
+                trace_dict[j] = ((T[0][0], self.M[j]))
+            
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
             q[self.num_bin] = pheno.T @ pheno 
         
@@ -228,13 +238,15 @@ class StreamingRHE(RHE):
                 multiprocessing.set_start_method('spawn')
 
             work_ranges = self._distribute_work(self.num_jack + 1, self.num_workers)
+            manager = multiprocessing.Manager()
+            
+            trace_dict = manager.dict() if self.get_trace else None
             result_queue = Queue()
-            print(work_ranges)
 
             processes = []
 
             for worker_num, (start_j, end_j) in enumerate(work_ranges):
-                p = multiprocessing.Process(target=self._estimate_worker, args=(worker_num, method, start_j, end_j, result_queue))
+                p = multiprocessing.Process(target=self._estimate_worker, args=(worker_num, method, start_j, end_j, result_queue, trace_dict))
                 processes.append(p)
                 p.start()
             for p in processes:
@@ -249,9 +261,14 @@ class StreamingRHE(RHE):
 
         else:
             # TODO
+            trace_dict = {} if self.get_trace else None
             pass
+
+        print(trace_dict)
+        if self.get_trace:
+            self.get_trace_summary(trace_dict)
+
         sigma_ests = np.array(all_results)
-        print(sigma_ests)
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
             
         return sigma_est_jackknife, sigma_ests_total

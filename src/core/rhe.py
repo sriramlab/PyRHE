@@ -33,6 +33,8 @@ class RHE:
         multiprocessing: bool = True,
         verbose: bool = True,
         seed: int = 0,
+        get_trace: bool = False,
+        trace_dir: str = None,
     ):
         """
         Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
@@ -45,8 +47,8 @@ class RHE:
         self.seed = seed
         np.random.seed(self.seed)
 
-        self.num_bin= num_bin
         self.num_jack = num_jack
+        self.num_blocks = num_jack
         self.num_random_vec = num_random_vec
         self.verbose = verbose
 
@@ -59,13 +61,20 @@ class RHE:
         self._init_device(self.device_name, self.cuda_num)
 
         # num workers: auto detect num cores 
-        if num_workers is not None:
-            self.num_workers = num_workers
+        if self.device == torch.device("cuda"):
+            total_workers = torch.cuda.get_device_properties(0).multi_processor_count
         else:
-            if self.device == torch.device("cuda"):
-                self.num_workers = torch.cuda.get_device_properties(0).multi_processor_count
+            total_workers = num_cores = os.cpu_count()
+        
+        if num_workers is not None:
+            if num_workers > total_workers:
+                raise ValueError(f"The device only have {total_workers} cores but tried to specify {num_workers} workers")
             else:
-                self.num_workers = num_cores = os.cpu_count()
+                if num_workers > total_workers // 10:
+                    print(f"The device only have {total_workers} cores but tried to specify {num_workers} workers, recommend to decrease the worker count to avoid memory issues.")
+                self.num_workers = num_workers
+        else:
+            self.num_workers = total_workers // 10
         print(f"Number of workers: {self.num_workers}")
 
 
@@ -87,6 +96,7 @@ class RHE:
         self.num_bin, self.annot_matrix, self.len_bin = read_annot(annot_file, self.num_jack)
 
         # read pheno file and center
+        self.pheno_file = pheno_file
         if pheno_file is not None:
             self.pheno = read_pheno(pheno_file)
             self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
@@ -109,11 +119,18 @@ class RHE:
             self.M = np.zeros((self.num_jack + 1, self.num_bin))
             self.M[self.num_jack] = self.len_bin
 
-
         # all_zb
         self.all_zb = np.random.randn(self.num_indv, self.num_random_vec)
         if self.use_cov:
             self.all_Uzb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
+
+        # trace info
+        self.get_trace = get_trace
+        self.trace_dir = trace_dir
+        # if self.get_trace:
+            # if self.num_bin > 1:
+            #     raise ValueError("Save trace failed, only supports saving tracing for single bin case.")
+                
 
         # atexit
         if self.multiprocessing:
@@ -338,7 +355,7 @@ class RHE:
         self.M[self.num_jack] = self.len_bin
 
 
-    def _pre_compute_worker(self, worker_num, start_j, end_j):
+    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue):
         try:
             if self.multiprocessing:
                 self._init_device(self.device_name, self.cuda_num)
@@ -346,7 +363,6 @@ class RHE:
             if self.multiprocessing:
                 # set up shared memory in child
                 XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
-                print("**************name", self.XXz_shm.name)
                 XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
                 XXz.fill(0)
 
@@ -369,6 +385,7 @@ class RHE:
                 M[self.num_jack] = self.len_bin
 
             else:
+                total_sample_queue = Queue() # TODO
                 XXz = self.XXz
                 yXXy = self.yXXy
                 UXXz = self.UXXz
@@ -383,6 +400,10 @@ class RHE:
                 subsample, sub_annot = self._get_jacknife_subsample(j)
                 start = time.time()
                 subsample = self.impute_geno(subsample, simulate_geno=True)
+
+                # save to the total sample
+                total_sample_queue.put((worker_num, subsample.shape[0]))
+
                 end = time.time()
                 print(f"impute time: {end - start}")
                 all_gen = self.partition_bins(subsample, sub_annot)
@@ -424,7 +445,10 @@ class RHE:
             mp_handler = MultiprocessingHandler(target=self._pre_compute_worker, work_ranges=work_ranges, device=self.device)
             mp_handler.start_processes()
             mp_handler.join_processes()
-        
+
+            total_sample_queue = mp_handler.get_queue()
+            self.total_num_sample = total_sample_queue[0][1]
+
             if isinstance(self, StreamingRHE): 
                 self._aggregate()
              
@@ -506,8 +530,9 @@ class RHE:
             sigma^2 for the whole genotype matrix [sigma_1^2 sigma_2^2 ... sigma_e^2]
 
         """
-        print(self.XXz)
         sigma_ests = []
+        if self.get_trace:
+            trace_dict = {}
 
         for j in range(self.num_jack + 1):
             print(f"Estimate for jackknife sample {j}")
@@ -560,6 +585,10 @@ class RHE:
             
             
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
+
+            if self.get_trace:
+                trace_dict[j] = ((T[0][0], self.M[j]))
+
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
             q[self.num_bin] = pheno.T @ pheno 
 
@@ -577,6 +606,9 @@ class RHE:
         sigma_ests = np.array(sigma_ests)
 
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
+
+        if self.get_trace:
+            self.get_trace_summary(trace_dict)
             
         return sigma_est_jackknife, sigma_ests_total
 
@@ -682,6 +714,32 @@ class RHE:
         enrichment_jackknife, enrichment_total = enrichment[:-1, :], enrichment[-1, :]
 
         return enrichment_jackknife, enrichment_total
+    
+    def get_trace_summary(self, trace_dict):
+        pheno_path = os.path.basename(self.pheno_file) if self.pheno_file is not None else None
+        trace_filename = f"run_{pheno_path}.trace"
+        mn_filename = f"run_{pheno_path}.MN"
+        
+        if self.trace_dir and os.path.isdir(self.trace_dir):
+            trace_filepath = os.path.join(self.trace_dir, trace_filename)
+            mn_filepath = os.path.join(self.trace_dir, mn_filename)
+        else:
+            trace_filepath = trace_filename
+            mn_filepath = mn_filename
+        
+        with open(trace_filepath, 'w') as file:
+            file.write("TRACE,NSNPS_JACKKNIFE\n")
+            for key in sorted(trace_dict.keys()):
+                value = trace_dict[key]
+                line = f"{value[0]:.1f}, {int(value[1][0])}\n"
+                file.write(line)
+
+        mn_content = f"NSAMPLE,NSNPS,NBLKS\n{self.total_num_sample},{self.num_snp},{self.num_blocks}"
+        with open(mn_filepath, 'w') as file:
+            file.write(mn_content)
+
+        print(f"Trace saved to {trace_filepath}")
+        print(f"MN data saved to {mn_filepath}")        
 
     def __call__(self, method: str = "QR"):
         """
