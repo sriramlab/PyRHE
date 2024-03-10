@@ -52,7 +52,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
-    parser.add_argument('--geno', '-g', type=str, default="/u/scratch/b/bronsonj/geno/25k_allsnps", help='genotype file path')
+    parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, help='Covariate file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors.')
@@ -65,7 +65,7 @@ if __name__ == '__main__':
     for i in range(25):
         args = parser.parse_args()
         cov = "_with_cov" if args.covariate else ""
-        base_pheno_path = f"/u/home/j/jiayini/project-sriram/RHE_project/data/pheno{cov}/bin_{args.num_bin}"
+        base_pheno_path = f"/home/jiayini1119/RHE_project/data_200k/pheno{cov}/bin_{args.num_bin}"
         args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
         args.seed = i
         args.output = f"output_{i}"  
