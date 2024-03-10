@@ -1,9 +1,22 @@
+import os
 import time
+import sys
+import signal
 import torch
 import scipy
+import atexit
+from typing import Optional
+import numpy as np
 from typing import List, Tuple
 from bed_reader import open_bed
 from src.util.file_processing import *
+from tqdm import tqdm
+import multiprocessing
+from multiprocessing import shared_memory
+from src.core.mp_handler import MultiprocessingHandler
+from src.util.mat_mul import *
+
+
 
 class RHE:
     def __init__(
@@ -15,37 +28,26 @@ class RHE:
         num_bin: int = 8,
         num_jack: int = 1,
         num_random_vec: int = 10,
-        device: torch.device = torch.device("cpu"),
+        device: str = "cpu",
+        cuda_num: int = None,
+        num_workers: int = None,
+        multiprocessing: bool = True,
         verbose: bool = True,
-        seed: int = 0,
+        seed: Optional[int] = None,
+        get_trace: bool = False,
+        trace_dir: str = None,
     ):
-        """
-        Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
-        """
 
         print(f"Using device {device}")
-        # Cupy
-        if 'cuda' in device.type:
-            try:
-                import cupy as cp
-                self.np = cp
-                print("Using CuPy for GPU-accelerated computations.")
-            except ImportError:
-                print("CuPy is not installed. Falling back to NumPy")
-                import numpy as np
-                self.np = np
-        else:
-            import numpy as np
-            self.np = np
-
-
+        self.multiprocessing = multiprocessing
+    
         # Seed
-        self.seed = seed
-        self.np.random.seed(seed)
+        self.seed = int(time.time()) if seed is None else seed
+        print(self.seed)
+        np.random.seed(self.seed)
 
-
-        self.num_bin= num_bin
         self.num_jack = num_jack
+        self.num_blocks = num_jack
         self.num_random_vec = num_random_vec
         self.verbose = verbose
 
@@ -54,7 +56,26 @@ class RHE:
         else:
             self.num_bin = None
 
-        self.device = device
+        self.device_name, self.cuda_num = device, cuda_num
+        self._init_device(self.device_name, self.cuda_num)
+
+        # num workers: auto detect num cores 
+        if self.device == torch.device("cuda"):
+            total_workers = torch.cuda.get_device_properties(0).multi_processor_count
+        else:
+            total_workers = num_cores = os.cpu_count()
+        
+        if num_workers is not None:
+            if num_workers > total_workers:
+                raise ValueError(f"The device only have {total_workers} cores but tried to specify {num_workers} workers")
+            else:
+                if num_workers > total_workers // 10:
+                    print(f"The device only have {total_workers} cores but tried to specify {num_workers} workers, recommend to decrease the worker count to avoid memory issues.")
+                self.num_workers = num_workers
+        else:
+            self.num_workers = total_workers // 10
+        print(f"Number of workers: {self.num_workers}")
+
 
         # read fam and bim file
         self.geno_bed = open_bed(geno_file + ".bed")
@@ -71,17 +92,21 @@ class RHE:
 
             generate_annot(annot_file, self.num_snp, self.num_bin)
 
-        self.num_bin, self.annot_matrix, len_bin = read_annot(annot_file, self.num_jack)
+        self.num_bin, self.annot_matrix, self.len_bin = read_annot(annot_file, self.num_jack)
 
         # read pheno file and center
+        self.pheno_file = pheno_file
         if pheno_file is not None:
             self.pheno = read_pheno(pheno_file)
-            self.pheno = self.pheno - self.np.mean(self.pheno) # center phenotype
+            # TODO: deal with missing phenotype
+
+
+            self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
             assert self.num_indv == self.pheno.shape[0]
         else:
             self.pheno = None
 
-        # read covariance file
+        # read covariate file
         if cov_file is None:
             self.use_cov = False
             self.cov_matrix = None
@@ -89,19 +114,43 @@ class RHE:
         else:
             self.use_cov = True
             self.cov_matrix = read_cov(cov_file)
-            self.Q = self.np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
+            self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
          # track subsample size
-        self.M = self.np.zeros((self.num_jack + 1, self.num_bin))
-        self.M[self.num_jack] = len_bin
+        if not self.multiprocessing:
+            self.M = np.zeros((self.num_jack + 1, self.num_bin))
+            self.M[self.num_jack] = self.len_bin
 
         # all_zb
-        self.all_zb = self.np.random.randn(self.num_indv, self.num_random_vec)
+        self.all_zb = np.random.randn(self.num_indv, self.num_random_vec)
         if self.use_cov:
             self.all_Uzb = self.cov_matrix @ self.Q @ (self.cov_matrix.T @ self.all_zb)
 
+        # trace info
+        self.get_trace = get_trace
+        self.trace_dir = trace_dir
+        if self.get_trace:
+            if self.num_bin > 1:
+                raise ValueError("Save trace failed, only supports saving tracing for single bin case.")
 
+        # atexit
+        if self.multiprocessing:
+            atexit.register(self._finalize)
     
+
+    def _init_device(self, device, cuda_num):
+        if device != "cpu":
+            if not torch.cuda.is_available():
+                print("cuda not available, fall back to cpu")
+                self.device = torch.device("cpu")
+            else:
+                if cuda_num is not None and cuda_num > -1:
+                    self.device = torch.device(f"cuda:{cuda_num}")
+                else:
+                    self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+        print(f"Using device {self.device}")
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -117,20 +166,20 @@ class RHE:
 
         if len(sigma_list) == 1:
                 sigma = sigma_list[0]
-                y = self.np.zeros((self.num_indv,1))
+                y = np.zeros((self.num_indv,1))
                 sigma_epsilon=1 - sigma # environmental effect sizes
-                betas = self.np.random.randn(self.num_snp,1)*self.np.sqrt(sigma) # additive SNP effect sizes
-                y += X@betas/self.np.sqrt(M)
+                betas = np.random.randn(self.num_snp,1)*np.sqrt(sigma) # additive SNP effect sizes
+                y += X@betas/np.sqrt(M)
                 #print(f'sigma_epislon={sigma_epsilon}')
-                y += self.np.random.randn(self.num_snp,1)*self.np.sqrt(sigma_epsilon) # add the effect sizes
+                y += np.random.randn(self.num_snp,1)*np.sqrt(sigma_epsilon) # add the effect sizes
 
         else:
             all_gen = self.partition_bins(geno=geno, annot=self.annot_matrix)
 
             h = 1 - sum(sigma_list) # residual covariance
-            sigma_epsilon = self.np.random.multivariate_normal([0] * self.num_indv, self.np.diag(self.np.full(self.num_indv, h)))
-            sigma_epsilon = self.np.array(sigma_epsilon).reshape((len(sigma_epsilon), 1))
-            y = self.np.zeros((self.num_indv,1))
+            sigma_epsilon = np.random.multivariate_normal([0] * self.num_indv, np.diag(np.full(self.num_indv, h)))
+            sigma_epsilon = np.array(sigma_epsilon).reshape((len(sigma_epsilon), 1))
+            y = np.zeros((self.num_indv,1))
 
             betas = []
 
@@ -138,8 +187,8 @@ class RHE:
                 X = data
                 M = X.shape[1]
                 sigma = sigma_list[i]
-                beta = self.np.random.multivariate_normal([0] * M, self.np.diag(self.np.full(M, sigma / M)))
-                beta = self.np.array(beta).reshape((len(beta), 1))
+                beta = np.random.multivariate_normal([0] * M, np.diag(np.full(M, sigma / M)))
+                beta = np.array(beta).reshape((len(beta), 1))
                 betas.append(beta)
                 y += X@beta
             
@@ -152,14 +201,14 @@ class RHE:
             print(Ncov)
 
             # Assume fixed gamma
-            y += self.cov_matrix @ self.np.ones((Ncov, 1))
-            # y += self.cov_matrix @ self.np.full((Ncov, 1), 0.1)
+            y += self.cov_matrix @ np.ones((Ncov, 1))
+            # y += self.cov_matrix @ np.full((Ncov, 1), 0.1)
 
         return y, betas
 
         
     def _simulate_geno_from_random(self, p_j):
-        rval = self.np.random.random()
+        rval = np.random.random()
         dist_pj = [(1-p_j)*(1-p_j), 2*p_j*(1-p_j), p_j*p_j]
         
         if rval < dist_pj[0]:
@@ -176,43 +225,43 @@ class RHE:
         X_imp = X
         if simulate_geno:
             for m in range(M):
-                observed_mask = ~self.np.isnan(X[:, m])
+                observed_mask = ~np.isnan(X[:, m])
                 observed_values = X[observed_mask, m]
                 
                 observed_ct = observed_values.size
-                observed_sum = self.np.sum(observed_values)
+                observed_sum = np.sum(observed_values)
                 observed_mean = 0.5 * observed_sum / observed_ct
                 
-                missing_mask = self.np.isnan(X[:, m])
+                missing_mask = np.isnan(X[:, m])
                 X_imp[missing_mask, m] = self._simulate_geno_from_random(observed_mean)
         
-        means = self.np.mean(X_imp, axis=0)
-        stds = 1/self.np.sqrt(means*(1-0.5*means))
+        means = np.mean(X_imp, axis=0)
+        stds = 1/np.sqrt(means*(1-0.5*means))
         X_imp = (X_imp - means) * stds
         return X_imp
 
     def solve_linear_equation(self, X, y):
-            '''
-            Solve least square
-            '''
-            sigma = self.np.linalg.lstsq(X, y, rcond=None)[0]
-            return sigma
+        '''
+        Solve least square
+        '''
+        sigma = np.linalg.lstsq(X, y, rcond=None)[0]
+        return sigma
 
 
     def solve_linear_qr(self, X, y):
-            '''
-            Solve least square using QR decomposition
-            '''
-            Q, R = scipy.linalg.qr(X)
-            sigma = scipy.linalg.solve_triangular(R, self.np.dot(Q.T, y))
-            return sigma
+        '''
+        Solve least square using QR decomposition
+        '''
+        Q, R = scipy.linalg.qr(X)
+        sigma = scipy.linalg.solve_triangular(R, np.dot(Q.T, y))
+        return sigma
 
 
     def _bin_to_snp(self, annot): 
         bin_to_snp_indices = []
 
         for bin_index in range(self.num_bin):
-            snp_indices = self.np.nonzero(annot[:, bin_index])[0]
+            snp_indices = np.nonzero(annot[:, bin_index])[0]
             bin_to_snp_indices.append(snp_indices.tolist())
 
         return bin_to_snp_indices
@@ -246,7 +295,7 @@ class RHE:
          # read bed file
         start_time = time.time()
         try:
-            subsample = self.geno_bed.read(index=self.np.s_[::1,start:end])
+            subsample = self.geno_bed.read(index=np.s_[::1,start:end])
         except Exception as e:
             raise Exception(f"Error occurred: {e}")
         end_time = time.time()
@@ -256,110 +305,220 @@ class RHE:
 
         return subsample, sub_annot
 
-    def _to_tensor(self, mat):
-        return torch.from_numpy(mat).float().to(self.device)
-
-    def mat_mul(self, *mats, to_numpy=True):
-        if not mats:
-            raise ValueError("At least one matrix is required.")
-        result_tensor = self._to_tensor(mats[0])
-        for mat in mats[1:]:
-            tensor = self._to_tensor(mat)
-            result_tensor = result_tensor @ tensor
-        if to_numpy:
-            return result_tensor.cpu().numpy()
-        else:
-            return result_tensor
 
     def regress_pheno(self, cov_matrix, pheno):
         """
         Project y onto the column space of the covariate matrix and compute the residual
         """
-        Q = self.np.linalg.inv(cov_matrix.T @ cov_matrix)
+        Q = np.linalg.inv(cov_matrix.T @ cov_matrix)
         return pheno - cov_matrix @ (Q @ (cov_matrix.T @ pheno))
     
     def _compute_XXz(self, b, X_kj):
         random_vec = self.all_zb[:, b].reshape(-1, 1)
-        return (self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec))).flatten()
+        return (mat_mul(X_kj, mat_mul(X_kj.T, random_vec, device=self.device), device=self.device)).flatten()
     
     def _compute_UXXz(self, XXz_kjb):
-        return self.mat_mul(self.cov_matrix, self.mat_mul(self.Q, self.mat_mul(self.cov_matrix.T, XXz_kjb))).flatten()
+        return mat_mul(self.cov_matrix, mat_mul(self.Q, mat_mul(self.cov_matrix.T, XXz_kjb, device=self.device), device=self.device), device=self.device).flatten()
     
     def _compute_XXUz(self, b, X_kj):
         random_vec_cov = self.all_Uzb[:, b].reshape(-1, 1)
-        return self.mat_mul(X_kj, self.mat_mul(X_kj.T, random_vec_cov)).flatten()  
+        return mat_mul(X_kj, mat_mul(X_kj.T, random_vec_cov, device=self.device), device=self.device).flatten()  
 
     def _compute_yXXy(self, X_kj, y):
         pheno = y if not self.use_cov else self.regress_pheno(self.cov_matrix, y)
-        v = self.mat_mul(X_kj.T, pheno)
-        return self.mat_mul(v.T, v)
+        v = mat_mul(X_kj.T, pheno, device=self.device)
+        return mat_mul(v.T, v, device=self.device)
+
+    def _setup_shared_memory(self, num_blocks):
+        # TODO: check memory usage
+        self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
+        self.XXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
+        self.XXz.fill(0)
+
+        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * np.float64().itemsize)
+        self.yXXy = np.ndarray((self.num_bin, num_blocks), dtype=np.float64, buffer=self.yXXy_shm.buf)
+        self.yXXy.fill(0)
+
+        if self.use_cov:
+            self.UXXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * self.num_random_vec * self.num_indv * np.float64().itemsize)
+            self.UXXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.UXXz_shm.buf)
+            self.UXXz.fill(0)
+
+            self.XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
+            self.XXUz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXUz_shm.buf)
+            self.XXUz.fill(0)
+        else:
+            self.UXXz = None
+            self.XXUz = None
+        
+        self.M_shm = shared_memory.SharedMemory(create=True, size= (self.num_jack + 1) * self.num_bin * np.int64().itemsize)
+        self.M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=self.M_shm.buf)
+        self.M.fill(0)
+        self.M[self.num_jack] = self.len_bin
+
+
+    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue=None):
+        try:
+            if self.multiprocessing:
+                self._init_device(self.device_name, self.cuda_num)
+
+            if self.multiprocessing:
+                # set up shared memory in child
+                XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
+                XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
+                XXz.fill(0)
+
+                yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
+                yXXy = np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=yXXy_shm.buf)
+                yXXy.fill(0)
+
+                if self.use_cov:
+                    UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
+                    UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
+                    UXXz.fill(0)
+
+                    XXUz_shm = shared_memory.SharedMemory(name=self.XXUz_shm.name)
+                    XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
+                    XXUz.fill(0)
+                
+                M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
+                M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
+                M.fill(0)
+                M[self.num_jack] = self.len_bin
+
+            else:
+                XXz = self.XXz
+                yXXy = self.yXXy
+                UXXz = self.UXXz
+                XXUz = self.XXUz
+                M = self.M
+            
+            for j in range(start_j, end_j):
+                print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
+                np.random.seed(self.seed)
+                start_whole = time.time()
+
+                subsample, sub_annot = self._get_jacknife_subsample(j)
+                start = time.time()
+                subsample = self.impute_geno(subsample, simulate_geno=True)
+
+                # save to the total sample
+                if total_sample_queue is not None:
+                    total_sample_queue.put((worker_num, subsample.shape[0]))
+                else:
+                    self.total_num_sample = subsample.shape[0]
+
+                end = time.time()
+                print(f"impute time: {end - start}")
+                all_gen = self.partition_bins(subsample, sub_annot)
+
+                for k, geno in enumerate(all_gen): 
+                    X_kj = geno
+                    M[j][k] = M[self.num_jack][k] - geno.shape[1]
+                    for b in range(self.num_random_vec):
+                        XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                        if self.use_cov:
+                            UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
+                            XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+                    yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+
+                end_whole = time.time()
+                print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
+        except Exception as e:
+            print(f"Error in worker {worker_num} processing range {start_j}-{end_j}: {e}")
+
+
+    def _distribute_work(self, num_jobs, num_workers):
+        jobs_per_worker = np.ceil(num_jobs / num_workers).astype(int)
+        ranges = [(i * jobs_per_worker, min((i + 1) * jobs_per_worker, num_jobs)) for i in range(num_workers)]
+        return ranges
 
     def pre_compute(self):
+        from . import StreamingRHE
+        num_block = self.num_workers if isinstance(self, StreamingRHE) else self.num_jack + 1
 
-        # XXz
-        self.XXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64)
-        self.yXXy = self.np.zeros((self.num_bin, self.num_jack + 1), dtype=self.np.float64)
-        self.UXXz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
-        self.XXUz = self.np.zeros((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=self.np.float64) if self.use_cov else None
+        start_whole = time.time()
 
+        if self.multiprocessing:
+            self._setup_shared_memory(num_block)
+            work_ranges = self._distribute_work(self.num_jack, self.num_workers)
+            print(work_ranges)
 
-        for j in range(self.num_jack):
-            print(f"Precompute for jackknife sample {j}")
-            start_whole = time.time()
-            subsample, sub_annot = self._get_jacknife_subsample(j)
-            start=time.time()
-            subsample = self.impute_geno(subsample, simulate_geno=True)
-            end=time.time()
-            print(f"impute time: {end - start}")
-            all_gen = self.partition_bins(subsample, sub_annot)
+            processes = []
 
-                    
-            for k, geno in enumerate(all_gen): 
-                X_kj = geno
-                self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1] # store the dimension with the corresponding block
-                for b in range(self.num_random_vec):
-                    start = time.time()
-                    self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
-                    end = time.time()
-                    # print(f"mat mul time: {end-start}")
-                    if self.use_cov:
-                        self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                        self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-        
+            mp_handler = MultiprocessingHandler(target=self._pre_compute_worker, work_ranges=work_ranges, device=self.device)
+            mp_handler.start_processes()
+            mp_handler.join_processes()
 
-                self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
-            
+            total_sample_queue = mp_handler.get_queue()
+            self.total_num_sample = total_sample_queue[0][1]
 
+            if isinstance(self, StreamingRHE): 
+                self._aggregate()
+             
+        else:
+            if isinstance(self, StreamingRHE):
+                self.XXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64)
+                self.yXXy_per_jack = np.zeros((self.num_bin, 2), dtype=np.float64)
+                self.UXXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
+                self.XXUz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
 
-            end_whole = time.time()
-            print(f"jackknife precompute total time: {end_whole-start_whole}")
-                
+            else:
+                self.XXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64)
+                self.yXXy = np.zeros((self.num_bin, num_block), dtype=np.float64)
+                self.UXXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
+                self.XXUz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
 
-        for k in range(self.num_bin):
-            for j in range(self.num_jack):
-                for b in range (self.num_random_vec):
-                    self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
-                self.yXXy[k][self.num_jack] += self.yXXy[k][j]
-            
-            for j in range(self.num_jack):
-                for b in range (self.num_random_vec):
-                    self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
-                self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
-        
-        if self.use_cov:
+            for j in tqdm(range(self.num_jack), desc="Preprocessing jackknife subsamples..."):
+                self._pre_compute_worker(0, j, j + 1)
+
+        end_whole = time.time()
+
+        print(f"Precompute total time: {end_whole - start_whole}")
+
+        if not isinstance(self, StreamingRHE): 
             for k in range(self.num_bin):
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
-                        self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
-                        self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
-                                        
+                        self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
+                    self.yXXy[k][self.num_jack] += self.yXXy[k][j]
+                
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
-                        self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
-                        self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
+                        self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
+                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
+            
+            if self.use_cov:
+                for k in range(self.num_bin):
+                    for j in range(self.num_jack):
+                        for b in range (self.num_random_vec):
+                            self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
+                            self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
+                                            
+                    for j in range(self.num_jack):
+                        for b in range (self.num_random_vec):
+                            self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
+                            self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
+
+    def _finalize(self):
+        self.XXz_shm.close()
+        self.yXXy_shm.close()
+        if self.use_cov:
+            self.UXXz_shm.close()
+            self.XXUz_shm.close()
+        
+        self.M_shm.close()
+
+        self.XXz_shm.unlink()
+        self.yXXy_shm.unlink()
+        if self.use_cov:
+            self.UXXz_shm.unlink()
+            self.XXUz_shm.unlink()
+        
+        self.M_shm.unlink()
         
      
-    def estimate(self, method: str = "QR") -> Tuple[List[List], List]:
+    def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         """
         Actual RHE estimation for sigma^2
         Returns: 
@@ -375,30 +534,32 @@ class RHE:
 
         """
         sigma_ests = []
+        if self.get_trace:
+            trace_dict = {}
 
         for j in range(self.num_jack + 1):
             print(f"Estimate for jackknife sample {j}")
 
-            T = self.np.zeros((self.num_bin+1, self.num_bin+1))
-            q = self.np.zeros((self.num_bin+1, 1))
+            T = np.zeros((self.num_bin+1, self.num_bin+1))
+            q = np.zeros((self.num_bin+1, 1))
 
             for k_k in range(self.num_bin):
-                for k_l in range(self.num_bin): # TODO: optimize 
+                for k_l in range(self.num_bin):
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
                     B1 = self.XXz[k_k][j]
                     B2 = self.XXz[k_l][j]
-                    T[k_k, k_l] += self.np.sum(B1 * B2)
+                    T[k_k, k_l] += np.sum(B1 * B2)
 
                     if self.use_cov:
                         h1 = self.cov_matrix.T @ B1.T
                         h2 = self.Q @ h1
                         h3 = self.cov_matrix @ h2
-                        trkij_res1 = self.np.sum(h3.T * B2)
+                        trkij_res1 = np.sum(h3.T * B2)
 
                         B1 = self.XXUz[k_k][j]
                         B2 = self.UXXz[k_l][j]
-                        trkij_res2 = self.np.sum(B1 * B2)
+                        trkij_res2 = np.sum(B1 * B2)
                     
                         T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
 
@@ -417,7 +578,7 @@ class RHE:
                 else:
                     B1 = self.XXz[k][j]
                     C1 = self.all_Uzb
-                    tk_res = self.np.sum(B1 * C1.T)
+                    tk_res = np.sum(B1 * C1.T)
                     tk_res = 1/(self.num_random_vec * M_k) * tk_res
 
                     T[k, self.num_bin] = self.num_indv - tk_res
@@ -427,23 +588,30 @@ class RHE:
             
             
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
+
+            if self.get_trace:
+                trace_dict[j] = ((T[0][0], self.M[j]))
+
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
             q[self.num_bin] = pheno.T @ pheno 
 
             if method == "lstsq":
                 sigma_est = self.solve_linear_equation(T,q)
-                sigma_est = self.np.ravel(sigma_est).tolist()
+                sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             elif method == "QR":
                 sigma_est = self.solve_linear_qr(T,q)
-                sigma_est = self.np.ravel(sigma_est).tolist()
+                sigma_est = np.ravel(sigma_est).tolist()
                 sigma_ests.append(sigma_est)
             else:
                 raise ValueError("Unsupported method for solving linear equation")
             
-        sigma_ests = self.np.array(sigma_ests)
+        sigma_ests = np.array(sigma_ests)
 
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
+
+        if self.get_trace:
+            self.get_trace_summary(trace_dict)
             
         return sigma_est_jackknife, sigma_ests_total
 
@@ -463,11 +631,11 @@ class RHE:
 
             for bin_index in range(ests.shape[1]):
                 bin_values = ests[:, bin_index]
-                mean_bin = self.np.mean(bin_values)
+                mean_bin = np.mean(bin_values)
                 sq_diffs = 0
                 for bin_value in bin_values:
                     sq_diffs += (bin_value - mean_bin)**2
-                se_bin = self.np.sqrt((self.num_jack - 1) * sq_diffs / self.num_jack)
+                se_bin = np.sqrt((self.num_jack - 1) * sq_diffs / self.num_jack)
                 SE.append(se_bin)
 
             return SE
@@ -489,7 +657,7 @@ class RHE:
 
         """
 
-        sigma_ests = self.np.vstack([sigma_est_jackknife, sigma_ests_total[self.np.newaxis, :]])
+        sigma_ests = np.vstack([sigma_est_jackknife, sigma_ests_total[np.newaxis, :]])
 
         h2 = []
 
@@ -505,7 +673,7 @@ class RHE:
             h2_list.append(h_SNP_2)
             h2.append(h2_list)
         
-        h2 = self.np.array(h2)
+        h2 = np.array(h2)
         
         h2_jackknife, h2_total = h2[:-1, :], h2[-1, :]
 
@@ -527,7 +695,7 @@ class RHE:
             enrichment for the whole genotype matrix [enrichment_1^2 ... enrichment_n^2]
 
         """
-        h2 = self.np.vstack([h2_jackknife, h2_total[self.np.newaxis, :]])
+        h2 = np.vstack([h2_jackknife, h2_total[np.newaxis, :]])
 
         enrichment = []
 
@@ -544,21 +712,45 @@ class RHE:
         
             enrichment.append(enrichment_jack_bin)
 
-        enrichment = self.np.array(enrichment)
+        enrichment = np.array(enrichment)
         
         enrichment_jackknife, enrichment_total = enrichment[:-1, :], enrichment[-1, :]
 
         return enrichment_jackknife, enrichment_total
+    
+    def get_trace_summary(self, trace_dict):
+        pheno_path = os.path.basename(self.pheno_file) if self.pheno_file is not None else None
+        trace_filename = f"run_{pheno_path}.trace"
+        mn_filename = f"run_{pheno_path}.MN"
+        
+        if self.trace_dir and os.path.isdir(self.trace_dir):
+            trace_filepath = os.path.join(self.trace_dir, trace_filename)
+            mn_filepath = os.path.join(self.trace_dir, mn_filename)
+        else:
+            trace_filepath = trace_filename
+            mn_filepath = mn_filename
+        
+        with open(trace_filepath, 'w') as file:
+            file.write("TRACE,NSNPS_JACKKNIFE\n")
+            for key in sorted(trace_dict.keys()):
+                value = trace_dict[key]
+                line = f"{value[0]:.1f},{int(value[1][0])}\n"
+                file.write(line)
+
+        mn_content = f"NSAMPLE,NSNPS,NBLKS\n{self.total_num_sample},{self.num_snp},{self.num_blocks}"
+        with open(mn_filepath, 'w') as file:
+            file.write(mn_content)
+
+        print(f"Trace saved to {trace_filepath}")
+        print(f"MN data saved to {mn_filepath}")        
 
     def __call__(self, method: str = "QR"):
         """
         whole RHE process for printing etc
         """
-
         self.pre_compute()
 
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
-
         sig_errs = self.estimate_error(sigma_est_jackknife)
 
         for i, est in enumerate(sigma_ests_total):
@@ -568,23 +760,15 @@ class RHE:
                 print(f"sigma^2 estimate for bin {i}: {est}, SE: {sig_errs[i]}")
         
         h2_jackknife, h2_total = self.compute_h2(sigma_est_jackknife, sigma_ests_total)
-
         h2_errs = self.estimate_error(h2_jackknife)
 
         for i, est_h2 in enumerate(h2_total):
             print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs[i]}")
 
         enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
-
         enrichment_errs = self.estimate_error(enrichment_jackknife)
 
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
-
-    # TODO: fix for streaming version
-    def get_yxxy(self):
-        if not self.yXXy:  
-            raise ValueError("yxxy has not been computed yet")
-        return self.yXXy
