@@ -37,7 +37,7 @@ if __name__ == '__main__':
     output_dir = f'/home/jiayini1119/RHE_project/data_200k/pheno_with_cov/bin_{args.num_bins}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    covariate_file = '/home/jiayini1119/RHE_project/data_200k/200k.height.covar'
+    covariate_file = '/home/jiayini1119/data/200k.covar'
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

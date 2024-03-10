@@ -7,6 +7,8 @@ from typing import List, Tuple
 import numpy as np
 import multiprocessing
 from multiprocessing import shared_memory, Queue
+from src.core.mp_handler import MultiprocessingHandler
+
 
 
 class StreamingRHE(RHE):
@@ -23,7 +25,7 @@ class StreamingRHE(RHE):
         num_workers: int = None,
         multiprocessing: bool = True,
         verbose: bool = True,
-        seed: int = 0,
+        seed: int = None,
         get_trace: bool = False,
         trace_dir: str = None,
     ):
@@ -233,45 +235,37 @@ class StreamingRHE(RHE):
             end_whole = time.time()
             print(f"estimate time for jackknife subsample: {end_whole - start_whole}")
 
-        result_queue.put((worker_num, sigma_ests)) # ensure in order
+        if self.multiprocessing:
+            result_queue.put((worker_num, sigma_ests)) # ensure in order
+        else:
+            result_queue.extend(sigma_ests)
 
 
     def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         if self.multiprocessing:
-            if self.device == torch.device("cuda"):
-                multiprocessing.set_start_method('spawn')
-
             work_ranges = self._distribute_work(self.num_jack + 1, self.num_workers)
             manager = multiprocessing.Manager()
-            
             trace_dict = manager.dict() if self.get_trace else None
-            result_queue = Queue()
 
-            processes = []
-
-            for worker_num, (start_j, end_j) in enumerate(work_ranges):
-                p = multiprocessing.Process(target=self._estimate_worker, args=(worker_num, method, start_j, end_j, result_queue, trace_dict))
-                processes.append(p)
-                p.start()
-            for p in processes:
-                p.join()
+            mp_handler = MultiprocessingHandler(target=self._estimate_worker, work_ranges=work_ranges, device=self.device, trace_dict=trace_dict, method=method)
+            mp_handler.start_processes()
+            mp_handler.join_processes()
+            results = mp_handler.get_queue()
+            results.sort(key=lambda x: x[0])
+            all_results = [item for _, result in results for item in result]
 
         else:
-            result_queue = queue.Queue()
+            self.result_queue = []
             trace_dict = {} if self.get_trace else None
             for j in tqdm(range(self.num_jack + 1), desc="Estimating..."):
-                self._estimate_worker(0, method, j, j + 1, result_queue, trace_dict)
+                self._estimate_worker(0, method, j, j + 1, self.result_queue, trace_dict)
+            all_results = self.result_queue
+            del self.result_queue
 
         if self.get_trace:
             self.get_trace_summary(trace_dict)
 
         # Aggregate results
-        results = []
-        while not result_queue.empty():
-            results.append(result_queue.get())
-        results.sort(key=lambda x: x[0])
-        all_results = [item for _, result in results for item in result]
-
         sigma_ests = np.array(all_results)
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
             
@@ -325,7 +319,7 @@ class StreamingRHE(RHE):
             q = np.zeros((self.num_bin+1, 1))
 
             for k_k in range(self.num_bin):
-                for k_l in range(self.num_bin): # TODO: optimize 
+                for k_l in range(self.num_bin):
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
                     B1 = self.XXz_per_jack[k_k][1]

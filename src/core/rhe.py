@@ -5,6 +5,7 @@ import signal
 import torch
 import scipy
 import atexit
+from typing import Optional
 import numpy as np
 from typing import List, Tuple
 from bed_reader import open_bed
@@ -32,19 +33,17 @@ class RHE:
         num_workers: int = None,
         multiprocessing: bool = True,
         verbose: bool = True,
-        seed: int = 0,
+        seed: Optional[int] = None,
         get_trace: bool = False,
         trace_dir: str = None,
     ):
-        """
-        Initialize the RHE algorithm (creating geno matrix, pheno matrix, etc.)
-        """
 
         print(f"Using device {device}")
         self.multiprocessing = multiprocessing
     
         # Seed
-        self.seed = seed
+        self.seed = int(time.time()) if seed is None else seed
+        print(self.seed)
         np.random.seed(self.seed)
 
         self.num_jack = num_jack
@@ -99,12 +98,15 @@ class RHE:
         self.pheno_file = pheno_file
         if pheno_file is not None:
             self.pheno = read_pheno(pheno_file)
+            # TODO: deal with missing phenotype
+
+
             self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
             assert self.num_indv == self.pheno.shape[0]
         else:
             self.pheno = None
 
-        # read covariance file
+        # read covariate file
         if cov_file is None:
             self.use_cov = False
             self.cov_matrix = None
@@ -328,6 +330,7 @@ class RHE:
         return mat_mul(v.T, v, device=self.device)
 
     def _setup_shared_memory(self, num_blocks):
+        # TODO: check memory usage
         self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
         self.XXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
         self.XXz.fill(0)
@@ -392,7 +395,7 @@ class RHE:
             
             for j in range(start_j, end_j):
                 print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
-                np.random.seed(self.seed + j)
+                np.random.seed(self.seed)
                 start_whole = time.time()
 
                 subsample, sub_annot = self._get_jacknife_subsample(j)
@@ -442,7 +445,7 @@ class RHE:
             print(work_ranges)
 
             processes = []
-            
+
             mp_handler = MultiprocessingHandler(target=self._pre_compute_worker, work_ranges=work_ranges, device=self.device)
             mp_handler.start_processes()
             mp_handler.join_processes()
@@ -541,7 +544,7 @@ class RHE:
             q = np.zeros((self.num_bin+1, 1))
 
             for k_k in range(self.num_bin):
-                for k_l in range(self.num_bin): # TODO: optimize 
+                for k_l in range(self.num_bin):
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
                     B1 = self.XXz[k_k][j]
@@ -731,7 +734,7 @@ class RHE:
             file.write("TRACE,NSNPS_JACKKNIFE\n")
             for key in sorted(trace_dict.keys()):
                 value = trace_dict[key]
-                line = f"{value[0]:.1f}, {int(value[1][0])}\n"
+                line = f"{value[0]:.1f},{int(value[1][0])}\n"
                 file.write(line)
 
         mn_content = f"NSAMPLE,NSNPS,NBLKS\n{self.total_num_sample},{self.num_snp},{self.num_blocks}"

@@ -19,7 +19,7 @@ geno_path="/home/jiayini1119/RHE_project/data_25k/simple/actual_geno_1"
     
 # to_bed(plink_bed_file, X)
 
-rhe = StreamingRHE(
+rhe = RHE(
     geno_file=geno_path,
     annot_file='/home/jiayini1119/RHE_project/data_25k/simple/annot.txt',
     cov_file='/home/jiayini1119/RHE_project/data_25k/simple/small_covariate_file.cov',
@@ -27,8 +27,9 @@ rhe = StreamingRHE(
     device="cpu",
     num_jack=8,
     num_workers=2,
+    seed=0,
     get_trace=True,
-    # multiprocessing=False,
+    multiprocessing=False,
 )
 
 print("Simulating Phenotype...")

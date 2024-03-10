@@ -11,19 +11,6 @@ import time
 def main(args):
 
     print(args)
-
-    # Device
-    # device = "cpu"
-    # if torch.cuda.is_available():
-    #     if args.device >= 0:
-    #         device = f"cuda:{args.device}"
-    #     else:
-    #         device = "cuda"
-    # else:
-    #     print("cuda not available, fall back to cpu")
-    #     device = "cpu"
-    # device = torch.device(device)
-
     pheno_file = args.pheno
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
     
@@ -102,7 +89,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_workers', type=int, default=10, help='Number of workers')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
-    parser.add_argument('--seed', default=0, help='Random seed')
+    parser.add_argument('--seed', default=None, help='Random seed')
     parser.add_argument('--device', type=str, default="cpu", help="device to use")
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
 
@@ -120,7 +107,7 @@ if __name__ == '__main__':
             cov = ""
         base_pheno_path = f"{DATA_DIR}/pheno{cov}/bin_{args.num_bin}"
         args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
-        args.seed = i
+        # args.seed = i
         args.output = f"output_{i}"  
         args.multiprocessing = True
         main(args)
