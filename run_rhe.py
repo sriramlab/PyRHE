@@ -12,7 +12,7 @@ def main(args):
 
     print(args)
     pheno_file = args.pheno
-    annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
+    annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}" if args.annot is None else args.annot
 
     if args.num_workers <= 1:
         args.multiprocessing = False
@@ -91,6 +91,7 @@ if __name__ == '__main__':
     parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
+    parser.add_argument('--annot', '-c', type=str, default=None, help='Annotation file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_workers', type=int, default=10, help='Number of workers')
