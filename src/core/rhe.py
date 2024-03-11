@@ -79,7 +79,7 @@ class RHE:
 
         # read fam and bim file
         self.geno_bed = open_bed(geno_file + ".bed")
-        self.num_indv = read_fam(geno_file + ".fam")
+        self.num_indv_original = read_fam(geno_file + ".fam")
         self.num_snp = read_bim(geno_file + ".bim")
 
 
@@ -97,14 +97,13 @@ class RHE:
         # read pheno file and center
         self.pheno_file = pheno_file
         if pheno_file is not None:
-            self.pheno = read_pheno(pheno_file)
-            # TODO: deal with missing phenotype
-
-
+            self.pheno, self.missing_indv = read_pheno(pheno_file)
             self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
-            assert self.num_indv == self.pheno.shape[0]
         else:
             self.pheno = None
+            self.missing_indv = []
+        
+        self.num_indv = self.num_indv_original - len(self.missing_indv)
 
         # read covariate file
         if cov_file is None:
@@ -113,7 +112,9 @@ class RHE:
             self.Q = None
         else:
             self.use_cov = True
-            self.cov_matrix = read_cov(cov_file)
+            cov_matrix = read_cov(cov_file)
+            self.cov_matrix = np.delete(cov_matrix, self.missing_indv, axis=0)
+            del cov_matrix
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
          # track subsample size
@@ -150,7 +151,6 @@ class RHE:
                     self.device = torch.device("cuda")
         else:
             self.device = torch.device("cpu")
-        print(f"Using device {self.device}")
     
     def simulate_pheno(self, sigma_list: List):
         '''
@@ -295,7 +295,9 @@ class RHE:
          # read bed file
         start_time = time.time()
         try:
-            subsample = self.geno_bed.read(index=np.s_[::1,start:end])
+            subsample_temp = self.geno_bed.read(index=np.s_[::1,start:end])
+            subsample = np.delete(subsample_temp, self.missing_indv, axis=0)
+            del subsample_temp
         except Exception as e:
             raise Exception(f"Error occurred: {e}")
         end_time = time.time()
@@ -357,7 +359,7 @@ class RHE:
         self.M[self.num_jack] = self.len_bin
 
 
-    def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue=None):
+    def _pre_compute_worker(self, worker_num, start_j, end_j):
         try:
             if self.multiprocessing:
                 self._init_device(self.device_name, self.cuda_num)
@@ -402,11 +404,7 @@ class RHE:
                 start = time.time()
                 subsample = self.impute_geno(subsample, simulate_geno=True)
 
-                # save to the total sample
-                if total_sample_queue is not None:
-                    total_sample_queue.put((worker_num, subsample.shape[0]))
-                else:
-                    self.total_num_sample = subsample.shape[0]
+                assert subsample.shape[0] == self.num_indv
 
                 end = time.time()
                 print(f"impute time: {end - start}")
@@ -449,9 +447,6 @@ class RHE:
             mp_handler = MultiprocessingHandler(target=self._pre_compute_worker, work_ranges=work_ranges, device=self.device)
             mp_handler.start_processes()
             mp_handler.join_processes()
-
-            total_sample_queue = mp_handler.get_queue()
-            self.total_num_sample = total_sample_queue[0][1]
 
             if isinstance(self, StreamingRHE): 
                 self._aggregate()
@@ -737,7 +732,7 @@ class RHE:
                 line = f"{value[0]:.1f},{int(value[1][0])}\n"
                 file.write(line)
 
-        mn_content = f"NSAMPLE,NSNPS,NBLKS\n{self.total_num_sample},{self.num_snp},{self.num_blocks}"
+        mn_content = f"NSAMPLE,NSNPS,NBLKS\n{self.num_indv},{self.num_snp},{self.num_blocks}"
         with open(mn_filepath, 'w') as file:
             file.write(mn_content)
 

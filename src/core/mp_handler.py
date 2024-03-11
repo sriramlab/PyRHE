@@ -31,7 +31,7 @@ class MultiprocessingHandler:
             multiprocessing.set_start_method('spawn', force=True)
         for worker_num, (start_j, end_j) in enumerate(self.work_ranges):
             if self.trace_dict is None:
-                p = multiprocessing.Process(target=self.target, args=(worker_num, start_j, end_j, self.result_queue))
+                p = multiprocessing.Process(target=self.target, args=(worker_num, start_j, end_j))
             else:
                 p = multiprocessing.Process(target=self.target, args=(worker_num, self.method, start_j, end_j, self.result_queue, self.trace_dict))
             self.processes.append(p)

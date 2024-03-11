@@ -79,14 +79,18 @@ def read_pheno(filename):
         
         lines = lines[1:]
         
-        N = len(lines)
-        y = np.zeros((N, 1))
+        y = [] 
+        missing_indv = []
 
         for i, line in enumerate(lines):
             columns = line.strip().split()
-            y[i] = float(columns[2])
+            if columns == "NA" or float(columns[2]) == -9:
+                missing_indv.append(i)
+            else:
+                y.append(float(columns[2]))
         
-        return y
+        y = np.array(y).reshape(-1, 1)
+        return y, missing_indv
     
     except FileNotFoundError:
         raise FileNotFoundError("Error: The pheno file could not be found.")

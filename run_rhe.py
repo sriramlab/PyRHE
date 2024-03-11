@@ -13,6 +13,11 @@ def main(args):
     print(args)
     pheno_file = args.pheno
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}"
+
+    if args.num_workers <= 1:
+        args.multiprocessing = False
+    else:
+        args.multiprocessing = True
     
     print(f"processing {pheno_file}")
     if args.streaming:
@@ -25,6 +30,7 @@ def main(args):
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
             device=args.device,
+            cuda_num =args.cuda_num,
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
@@ -41,6 +47,7 @@ def main(args):
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
             device=args.device,
+            cuda_num =args.cuda_num,
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
@@ -79,7 +86,6 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
-    parser.add_argument('--multiprocessing', action='store_true', help='use streaming version')
     parser.add_argument('--get_trace', action='store_true', help='get the trace estimate')
 
     parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
@@ -91,23 +97,24 @@ if __name__ == '__main__':
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
     parser.add_argument('--seed', default=None, help='Random seed')
     parser.add_argument('--device', type=str, default="cpu", help="device to use")
+    parser.add_argument('--cuda_num', type=int, default=None, help='cuda number')
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
 
     
-    # args = parser.parse_args()
+    args = parser.parse_args()
 
-    # main(args)
+    main(args)
 
 
-    for i in range(1):
-        args = parser.parse_args()
-        if args.covariate is not None:
-            cov = "_with_cov"
-        else:
-            cov = ""
-        base_pheno_path = f"{DATA_DIR}/pheno{cov}/bin_{args.num_bin}"
-        args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
-        # args.seed = i
-        args.output = f"output_{i}"  
-        args.multiprocessing = True
-        main(args)
+    # for i in range(1):
+    #     args = parser.parse_args()
+    #     if args.covariate is not None:
+    #         cov = "_with_cov"
+    #     else:
+    #         cov = ""
+    #     base_pheno_path = f"{DATA_DIR}/pheno{cov}/bin_{args.num_bin}"
+    #     args.pheno = os.path.join(base_pheno_path, f"{i}_temp.phen")  
+    #     # args.seed = i
+    #     args.output = f"output_{i}"  
+    #     args.multiprocessing = True
+    #     main(args)
