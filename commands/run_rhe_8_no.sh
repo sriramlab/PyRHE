@@ -14,9 +14,9 @@ do
     output="output_${i}"
   
   if [ "${streaming}" -eq 1 ]; then
-    cmd="python run_rhe.py --streaming"
+    cmd="python /home/jiayini1119/RHE_project/run_rhe.py --streaming"
   else
-    cmd="python run_rhe.py"
+    cmd="python /home/jiayini1119/RHE_project/run_rhe.py"
   fi
   
   cmd+=" --geno ${geno_path} --pheno ${pheno_path} -k ${num_vec} -b ${num_bin} -jn ${num_block} --output ${output}"
