@@ -12,7 +12,7 @@ do
   pheno_path="${pheno_dir_path}/${i}.phen"
     output="output_${i}"
   
-  cmd="python run_original.py --geno ${geno_path} --pheno ${pheno_path} -k ${num_vec} -b ${num_bin} -jn ${num_block} --output ${output}"
+  cmd="python /u/home/j/jiayini/project-sriram/RHE_project/run_original.py --geno ${geno_path} --pheno ${pheno_path} -k ${num_vec} -b ${num_bin} -jn ${num_block} --output ${output}"
   
   echo "Executing: $cmd"
   eval $cmd
