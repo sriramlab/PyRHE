@@ -27,7 +27,7 @@ class MultiprocessingHandler:
 
     def start_processes(self):
         signal.signal(signal.SIGINT, self._signal_handler)
-        if self.device == torch.device("cuda"):
+        if self.device.type == 'cuda':
             multiprocessing.set_start_method('spawn', force=True)
         for worker_num, (start_j, end_j) in enumerate(self.work_ranges):
             if self.trace_dict is None:

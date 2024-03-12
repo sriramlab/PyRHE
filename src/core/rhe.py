@@ -60,7 +60,7 @@ class RHE:
         self._init_device(self.device_name, self.cuda_num)
 
         # num workers: auto detect num cores 
-        if self.device == torch.device("cuda"):
+        if self.device.type == 'cuda':
             total_workers = torch.cuda.get_device_properties(0).multi_processor_count
         else:
             total_workers = num_cores = os.cpu_count()
