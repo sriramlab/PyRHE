@@ -1,5 +1,6 @@
 import subprocess
 import os
+import numpy as np
 import argparse
 import time
 from constant import RESULT_DIR, DATA_DIR
@@ -44,8 +45,11 @@ def main(args):
     runtime = end_time - start_time
     print(f"RHE original runtime: {runtime:.5f} seconds")
 
-    with open(output_file, 'a', encoding='utf-8') as f:
-        f.write(f"\nruntime: {runtime:.5f} seconds\n")
+    if not args.benchmark_runtime:
+        with open(output_file, 'a', encoding='utf-8') as f:
+            f.write(f"\nruntime: {runtime:.5f} seconds\n")
+    else:
+        return runtime
 
     print("Processing complete for " + pheno_file)
 
@@ -53,6 +57,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Original_RHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
+    parser.add_argument('--benchmark_runtime', action='store_true', help='benchmark the runtime')
     parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
@@ -63,18 +68,22 @@ if __name__ == '__main__':
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
 
     args = parser.parse_args()
+    
+    if args.benchmark_runtime:
+        runtimes = [] 
+        for i in range(3):
+            args = parser.parse_args()
+            cov = "_with_cov" if args.covariate else ""
+            base_pheno_path = f"{DATA_DIR}/pheno{cov}/bin_{args.num_bin}"
+            args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
+            runtime = main(args)
+            runtimes.append(runtime)
+        
+        mean_runtime = np.mean(runtimes)
+        std_runtime = np.std(runtimes)
+        print(f"runtime: {mean_runtime:.2f} ± {std_runtime:.2f} seconds")
 
-    main(args)
-
-    # for i in range(25):
-    #     args = parser.parse_args()
-    #     cov = "_with_cov" if args.covariate else ""
-    #     base_pheno_path = f"/home/jiayini1119/RHE_project/data_200k/pheno{cov}/bin_{args.num_bin}"
-    #     args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
-    #     args.output = f"output_{i}"  
-    #     main(args)
-
-
-
+    else:
+        main(args)
 
 
