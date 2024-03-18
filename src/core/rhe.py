@@ -42,7 +42,7 @@ class RHE:
         self.multiprocessing = multiprocessing
     
         # Seed
-        self.seed = int(time.time()) if seed is None else seed
+        self.seed = int(time.process_time()) if seed is None else seed
         print(self.seed)
         np.random.seed(self.seed)
 
@@ -63,7 +63,7 @@ class RHE:
         if self.device.type == 'cuda':
             total_workers = torch.cuda.get_device_properties(0).multi_processor_count
         else:
-            total_workers = num_cores = os.cpu_count()
+            total_workers = os.cpu_count()
         
         if num_workers is not None:
             if num_workers > total_workers:
@@ -295,9 +295,12 @@ class RHE:
          # read bed file
         start_time = time.time()
         try:
-            subsample_temp = self.geno_bed.read(index=np.s_[::1,start:end])
-            subsample = np.delete(subsample_temp, self.missing_indv, axis=0)
-            del subsample_temp
+            if len(self.missing_indv) == 0:
+                subsample = self.geno_bed.read(index=np.s_[::1,start:end])
+            else:
+                subsample_temp = self.geno_bed.read(index=np.s_[::1,start:end])
+                subsample = np.delete(subsample_temp, self.missing_indv, axis=0)
+                del subsample_temp
         except Exception as e:
             raise Exception(f"Error occurred: {e}")
         end_time = time.time()

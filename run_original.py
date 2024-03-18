@@ -74,7 +74,7 @@ if __name__ == '__main__':
         for i in range(3):
             args = parser.parse_args()
             cov = "_with_cov" if args.covariate else ""
-            base_pheno_path = f"{DATA_DIR}/pheno{cov}/bin_{args.num_bin}"
+            base_pheno_path = f"{args.pheno}/pheno{cov}/bin_{args.num_bin}"
             args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
             runtime = main(args)
             runtimes.append(runtime)
