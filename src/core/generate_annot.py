@@ -2,12 +2,13 @@
 Generate annotation file
 """
 import sys
-from constant import DATA_DIR, HOME_DIR
-sys.path.insert(0, HOME_DIR)
+sys.path.insert(0, "/u/project/sriram/jiayini/RHE_project/")
 import os
 import random
 import argparse
 from bed_reader import open_bed
+from constant import DATA_DIR, HOME_DIR
+
 
 
 def create_annot_file(geno_file, num_bin, filename):

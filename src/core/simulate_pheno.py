@@ -7,6 +7,7 @@ import os
 import numpy as np
 sys.path.insert(0, '/home/jiayini1119/RHE_project')
 from src.util.file_processing import read_pheno, read_cov
+from constant import DATA_DIR
 
 def simulate_pheno(pheno_file, cov_file, output_file):
     with open(pheno_file, 'r') as file:
@@ -30,14 +31,15 @@ def simulate_pheno(pheno_file, cov_file, output_file):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Simulate phenotype data with covariates.')
     parser.add_argument('--num_bins', '-b', type=int, default=1, help='Number of bins to process')
+    parser.add_argument('--covariate', '-c', type=str, help='covariate file path')
 
     args = parser.parse_args()
 
-    pheno_dir = f'/home/jiayini1119/RHE_project/data_200k/pheno/bin_{args.num_bins}'
-    output_dir = f'/home/jiayini1119/RHE_project/data_200k/pheno_with_cov/bin_{args.num_bins}'
+    pheno_dir = f'{DATA_DIR}/pheno/bin_{args.num_bins}'
+    output_dir = f'{DATA_DIR}pheno_with_cov/bin_{args.num_bins}'
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    covariate_file = '/home/jiayini1119/data/200k.covar'
+    covariate_file = args.covariate
 
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)

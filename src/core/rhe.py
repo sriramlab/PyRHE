@@ -283,7 +283,7 @@ class RHE:
         
     def _get_jacknife_subsample(self, jack_index: int) -> np.ndarray:
         """
-        Get the jacknife subsample (imputed)
+        Get the jacknife subsample 
         """
 
         step_size = self.num_snp // self.num_jack
@@ -525,7 +525,7 @@ class RHE:
             cols: sigma^2 for one jackknife sample [sigma_1^2 sigma_2^2 ... sigma_e^2]
             e.g.,
             sigma_est_jackknife[0][0]: sigma_2 estimate for the 1st bin in the 1st jacknife sample
-            sigma_est_jackknife[0][1]: sigma_2 estimate for the 1st bin in the 2st jacknife sample
+            sigma_est_jackknife[0][1]: sigma_2 estimate for the 1st bin in the 2nd jacknife sample
 
         sigma_ests_total
             sigma^2 for the whole genotype matrix [sigma_1^2 sigma_2^2 ... sigma_e^2]
@@ -648,7 +648,7 @@ class RHE:
             cols: h^2 for one jackknife sample [h_1^2 h_2^2 ... h_SNP^2]
             e.g.,
             h2_jackknife[0][0]: h^2 for the 1st bin in the 1st jacknife sample
-            h2_jackknife[0][1]: h^2 for the 1st bin in the 2st jacknife sample
+            h2_jackknife[0][1]: h^2 for the 1st bin in the 2nd jacknife sample
 
         h2_total
             h^2 for the whole genotype matrix [h_1^2 h_2^2 ... h_SNP^2]
@@ -665,7 +665,7 @@ class RHE:
             for k in range (self.num_bin):
                 total += sigma_ests_jack[k]
             assert sigma_ests_jack[-1] == sigma_ests_jack[k+1]
-            h2_list = [x / (total + sigma_ests_jack[-1])  for x in sigma_ests_jack]
+            h2_list = [x / (total + sigma_ests_jack[-1])  for x in sigma_ests_jack[:-1]]
             # compute h_SNP^2
             h_SNP_2 = total / (total + sigma_ests_jack[-1])
             h2_list.append(h_SNP_2)
@@ -687,7 +687,7 @@ class RHE:
             cols: enrichment for one jackknife sample [enrichment_1^2 ... enrichment_n^2]
             e.g.,
             enrichment_jackknife[0][0]: enrichment for the 1st bin in the 1st jacknife sample
-            enrichment_jackknife[0][1]: enrichment for the 1st bin in the 2st jacknife sample
+            enrichment_jackknife[0][1]: enrichment for the 1st bin in the 2nd jacknife sample
 
         enrichment_total
             enrichment for the whole genotype matrix [enrichment_1^2 ... enrichment_n^2]
@@ -761,7 +761,10 @@ class RHE:
         h2_errs = self.estimate_error(h2_jackknife)
 
         for i, est_h2 in enumerate(h2_total):
-            print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs[i]}")
+            if i == len(h2_total) - 1:
+                print(f"total h^2: {est_h2}, SE: {h2_errs[i]}")
+            else:
+                print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs[i]}")
 
         enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
         enrichment_errs = self.estimate_error(enrichment_jackknife)

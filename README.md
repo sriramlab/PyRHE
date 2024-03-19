@@ -66,6 +66,9 @@ def __call__(self, method: str = "QR"):
     return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
 
 ```
+
+# Other Functionalities (TODO: ADD)
+
 # Comparison between PyRHE & Original RHE (TODO: Add plot)
 
 
@@ -85,7 +88,7 @@ Use the [Simulator](https://github.com/sriramlab/Simulator) to simulate phenotyp
 If want to add covariate, do 
 ```
 cd core
-python simulate_pheno.py -b {num_bin}
+python simulate_pheno.py -b {num_bin} -c {cov_file_path}
 ```
 **4. Run original RHE**  
 ```

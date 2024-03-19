@@ -1,9 +1,9 @@
 
 import sys
-sys.path.insert(0, '/home/jiayini1119/RHE_project')
+sys.path.insert(0, '/u/project/sriram/jiayini/RHE_project/')
 from src.core.rhe import RHE
 from src.core.streaming_rhe import StreamingRHE
-geno_path="/home/jiayini1119/RHE_project/data_25k/simple/actual_geno_1"
+geno_path="/u/project/sriram/jiayini/RHE_project/data_25k/simple/actual_geno_1"
 
 # X = np.array([
 #         [0, 1, 1, 2, 1, 2, 1],
@@ -21,14 +21,14 @@ geno_path="/home/jiayini1119/RHE_project/data_25k/simple/actual_geno_1"
 
 rhe = RHE(
     geno_file=geno_path,
-    annot_file='/home/jiayini1119/RHE_project/data_25k/simple/annot.txt',
-    cov_file='/home/jiayini1119/RHE_project/data_25k/simple/small_covariate_file.cov',
+    annot_file='/u/project/sriram/jiayini/RHE_project/data_25k/simple/annot.txt',
+    cov_file='/u/project/sriram/jiayini/RHE_project/data_25k/simple/small_covariate_file.cov',
     num_bin=1,
     device="cpu",
     num_jack=8,
     num_workers=2,
     seed=0,
-    get_trace=True,
+    get_trace=False,
     multiprocessing=False,
 )
 
