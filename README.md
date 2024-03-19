@@ -69,8 +69,14 @@ def __call__(self, method: str = "QR"):
 
 # Other Functionalities (TODO: ADD)
 
-# Comparison between PyRHE & Original RHE (TODO: Add plot)
+# Comparison between PyRHE & Original RHE
+## Accuracy of Estimation
+<img width="1141" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/71b5cff8-2fdf-42ae-bf29-50e8b93e75f4">
 
+## Runtime Comparision
+<img width="862" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/a629685e-7d56-4b24-a41c-95a0d7c477a5">
+
+<img width="498" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/e3375751-fe0a-4c24-9bf8-84dff9d91634">
 
 # Example testing pipeline:
 The package also supports you to run testing pipelines when some files are missing (e.g., annotation file). Here is the example testing pipeline.
