@@ -12,7 +12,7 @@ from bed_reader import open_bed
 from src.util.file_processing import *
 from tqdm import tqdm
 import multiprocessing
-from multiprocessing import shared_memory
+from multiprocessing import shared_memory, Manager
 from src.core.mp_handler import MultiprocessingHandler
 from src.util.mat_mul import *
 
@@ -279,8 +279,21 @@ class RHE:
             all_gen.append(geno[:, bin_to_snp_indices[i]])
 
         return all_gen
-
+    
+    def read_geno(self, start, end):
+        try:
+            if len(self.missing_indv) == 0:
+                subsample = self.geno_bed.read(index=np.s_[::1,start:end])
+            else:
+                subsample_temp = self.geno_bed.read(index=np.s_[::1,start:end])
+                subsample = np.delete(subsample_temp, self.missing_indv, axis=0)
+                del subsample_temp
+        except Exception as e:
+            raise Exception(f"Error occurred: {e}")
         
+        return subsample
+
+
     def _get_jacknife_subsample(self, jack_index: int) -> np.ndarray:
         """
         Get the jacknife subsample 
@@ -294,15 +307,7 @@ class RHE:
 
          # read bed file
         start_time = time.time()
-        try:
-            if len(self.missing_indv) == 0:
-                subsample = self.geno_bed.read(index=np.s_[::1,start:end])
-            else:
-                subsample_temp = self.geno_bed.read(index=np.s_[::1,start:end])
-                subsample = np.delete(subsample_temp, self.missing_indv, axis=0)
-                del subsample_temp
-        except Exception as e:
-            raise Exception(f"Error occurred: {e}")
+        subsample = self.read_geno(start, end)
         end_time = time.time()
         print(f"read geno time: {end_time - start_time}")
 
@@ -773,3 +778,113 @@ class RHE:
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
+    
+
+    ############################ Other Functionalities #########################################
+
+    def block_Xz(self, bins_info, block_results_dict, j):
+        num_snps = self.step_size
+        if j == (self.num_blocks - 1):
+            num_snps = self.step_size + (self.num_snp % self.step_size)
+
+        Zs = np.random.normal(size=(num_snps, self.num_random_vec))
+
+        start_index = j*self.step_size
+        end_index = start_index + num_snps
+        
+        bins_info[j] = (start_index, end_index, num_snps)
+        geno = self.read_geno(start_index, end_index)
+        geno = self.impute_geno(geno, simulate_geno=True)
+        
+        if self.jackknife_blocks:
+            block_results_dict[j] = geno @ Zs
+
+        return geno @ Zs
+    
+
+    def block_XtXz(self, bins_info, results_dict, block_results_dict, all_blocks_results_dict, j):
+        start_index, end_index, num_snps = bins_info[j]
+        geno = self.read_geno(start_index, end_index)
+        geno = self.impute_geno(geno, simulate_geno=True)
+        
+        results_dict[j] = (geno.T) @ self.temp_results
+
+        if self.jackknife_blocks:
+            for i in range(self.num_blocks):
+                if i == j: continue
+                else:
+                    all_blocks_results_dict[(j, i)] = (geno.T) @ block_results_dict[j]
+
+    def get_XtXz(self, output, jackknife_blocks=True):
+        """
+        Get XtXz trace estimate
+        """
+        from itertools import repeat
+
+        self.jackknife_blocks = jackknife_blocks
+        self.temp_results = np.zeros((self.num_indv, self.num_random_vec))
+        results = np.zeros((self.num_snp, self.num_random_vec))
+        self.step_size = self.num_snp // self.num_blocks
+
+        bins_info = Manager().dict()
+        results_dict = Manager().dict()
+
+        if jackknife_blocks:
+            block_results_dict = Manager().dict()
+
+        with multiprocessing.Pool(self.num_workers) as pool:
+            with tqdm(total=self.num_blocks) as pbar:
+                pbar.set_description("Calculating Xz")
+                args_iter = zip(repeat(bins_info), repeat(block_results_dict), range(self.num_blocks))
+                for i, partial in enumerate(pool.starmap(self.block_Xz, args_iter)):
+                    self.temp_results += partial
+                    pbar.update()
+        pool.join()
+
+        if jackknife_blocks:
+            for j in range(self.num_blocks):
+                block_results_dict[j] = self.temp_results - block_results_dict[j]
+            
+            all_blocks_results_dict = Manager().dict()
+
+        with multiprocessing.Pool(self.num_workers) as pool:
+            with tqdm(total=self.num_blocks) as pbar:
+                pbar.set_description("Calculating XtXz")
+                args_iter = zip(repeat(bins_info), repeat(results_dict), repeat(block_results_dict), repeat(all_blocks_results_dict), range(self.num_blocks))
+                for i, partial in enumerate(pool.starmap(self.block_XtXz, args_iter)):
+                    pbar.update()
+        pool.join()
+
+        for j in range(self.num_blocks):
+            start_index, end_index, _ = bins_info[j]
+            results[start_index:end_index, :] = results_dict[j]
+            
+        
+        if jackknife_blocks:
+            jackknife_results = dict()
+            for j in range(self.num_blocks):
+                temp = []
+                for i in range(self.num_blocks):
+                    if i == j: continue
+                    else:
+                        temp.append(all_blocks_results_dict[(j, i)])
+                jackknife_results[j] = np.row_stack(temp)
+
+        trace_est = np.square(results).sum()/(self.num_random_vec*self.num_snp*self.num_snp)
+        print(f"The trace estimate is {trace_est}")
+
+        if jackknife_blocks:
+            for j in range(self.num_blocks):
+                jackknife_result = jackknife_results[j]
+                M_snps = np.shape(jackknife_result)[0]
+                jackknife_trace_est = np.square(jackknife_result).sum()/(self.num_random_vec*M_snps*M_snps)
+                
+                print(f"The trace estimate of {j}-th jackknife block is {jackknife_trace_est}")
+
+        with open(f"{output}.txt.bin", 'wb') as f:
+            results.tofile(f)
+
+        if jackknife_blocks:
+            for j in range(self.num_blocks):
+                with open(f"{output}.jack_{j}.txt.bin", "wb") as f:
+                    jackknife_results[j].tofile(f)
