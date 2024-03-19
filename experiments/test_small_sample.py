@@ -19,7 +19,7 @@ geno_path="/u/project/sriram/jiayini/RHE_project/data_25k/simple/actual_geno_1"
     
 # to_bed(plink_bed_file, X)
 
-rhe = RHE(
+rhe = StreamingRHE(
     geno_file=geno_path,
     annot_file='/u/project/sriram/jiayini/RHE_project/data_25k/simple/annot.txt',
     cov_file='/u/project/sriram/jiayini/RHE_project/data_25k/simple/small_covariate_file.cov',
@@ -42,4 +42,6 @@ y, _ = rhe.simulate_pheno(sigma_list=[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
 
 print(y)
 
-rhe()
+# rhe()
+
+rhe.get_XtXz(output="temp.txt")
