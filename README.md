@@ -1,6 +1,6 @@
-# RHE_project
+# PyRHE
 
-PyRHE is a Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It is easily portable and efficient. It uses `PyTorch` to convert large matrix into tensors to accelerate large matrix multiplication (supporting both CPU and CUDA version) and uses `multiprocessing` to process Jackknife blocks in parallel. 
+PyRHE is an efficient and portable Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It uses `PyTorch` to convert large matrix into tensors to accelerate large matrix multiplication and incorporates multiprocessing to process Jackknife blocks in parallel. It is designed to run on both CPU and CUDA-enabled GPU, and is easy to install and integrate into other applications.
 
 # Installation 
 
@@ -35,9 +35,6 @@ rhe = RHE(
 sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs = rhe()
 
 ```
-
-The package also supports streaming (memory-efficient) version of RHE. Replace the `RHE` with `StreamingRHE` in the above to get the streaming version. 
-
 You can call `rhe()` once to get all the estimation summary. In addition, `rhe()` call is composed of several functions that can be used individually (e.g., error estimation). 
 
 ```python
@@ -71,9 +68,9 @@ def __call__(self, method: str = "QR"):
 ```
 
 # Other Functionalities 
-- Memory efficient (Streaming) version
-- Simulating phenotype
-- Getting trace estimate
+- Memory efficient (Streaming) estimation（Replace the `RHE` with `StreamingRHE` in the above to get the streaming version）
+- Simulating phenotype 
+- Getting summary of trace estimate
 - Getting other summary statistics (e.g., XtXz)
 - To be added
 
