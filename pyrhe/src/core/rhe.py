@@ -9,12 +9,12 @@ from typing import Optional
 import numpy as np
 from typing import List, Tuple
 from bed_reader import open_bed
-from src.util.file_processing import *
+from pyrhe.src.util.file_processing import *
 from tqdm import tqdm
 import multiprocessing
 from multiprocessing import shared_memory, Manager
-from src.core.mp_handler import MultiprocessingHandler
-from src.util.mat_mul import *
+from pyrhe.src.core.mp_handler import MultiprocessingHandler
+from pyrhe.src.util.mat_mul import *
 
 
 
@@ -43,7 +43,6 @@ class RHE:
     
         # Seed
         self.seed = int(time.process_time()) if seed is None else seed
-        print(self.seed)
         np.random.seed(self.seed)
 
         self.num_jack = num_jack
@@ -198,8 +197,6 @@ class RHE:
 
         if self.use_cov:
             Ncov = self.cov_matrix.shape[1]
-            print(Ncov)
-
             # Assume fixed gamma
             y += self.cov_matrix @ np.ones((Ncov, 1))
             # y += self.cov_matrix @ np.full((Ncov, 1), 0.1)
@@ -309,7 +306,7 @@ class RHE:
         start_time = time.time()
         subsample = self.read_geno(start, end)
         end_time = time.time()
-        print(f"read geno time: {end_time - start_time}")
+        # print(f"read geno time: {end_time - start_time}")
 
         sub_annot = self.annot_matrix[start:end]
 
@@ -414,7 +411,7 @@ class RHE:
                 assert subsample.shape[0] == self.num_indv
 
                 end = time.time()
-                print(f"impute time: {end - start}")
+                # print(f"impute time: {end - start}")
                 all_gen = self.partition_bins(subsample, sub_annot)
 
                 for k, geno in enumerate(all_gen): 
@@ -447,7 +444,6 @@ class RHE:
         if self.multiprocessing:
             self._setup_shared_memory(num_block)
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
-            print(work_ranges)
 
             processes = []
 

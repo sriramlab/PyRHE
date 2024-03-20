@@ -2,12 +2,12 @@ import time
 import torch
 import queue
 from tqdm import tqdm
-from src.core.rhe import RHE
+from pyrhe.src.core.rhe import RHE
 from typing import List, Tuple
 import numpy as np
 import multiprocessing
 from multiprocessing import shared_memory, Queue
-from src.core.mp_handler import MultiprocessingHandler
+from pyrhe.src.core.mp_handler import MultiprocessingHandler
 
 
 

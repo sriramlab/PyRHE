@@ -1,18 +1,21 @@
 # RHE_project
 
-PyRHE is a Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It is easily portable and efficient. It uses `PyTorch` to convert large matrix into tensors to accelerate large matrix multiplication (supporting both CPU and CUDA version) and uses `multiprocessing` to process jackknife blocks in parallel. 
+PyRHE is a Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It is easily portable and efficient. It uses `PyTorch` to convert large matrix into tensors to accelerate large matrix multiplication (supporting both CPU and CUDA version) and uses `multiprocessing` to process Jackknife blocks in parallel. 
 
-# Installation (TODO)
+# Installation 
 
 ```
-git clone xxxxxxx
-pip install -r requirements.txt
+git clone git@github.com:jiayini1119/PyRHE.git
 pip install pyrhe/
+# Then install proper version of PyTorch from https://pytorch.org/ 
 ```
+
 
 # Example Usage
 
 ```python
+from pyrhe.src.core import RHE
+
 rhe = RHE(
       geno_file={geno_file_path},
       annot_file={annot_file_path},
@@ -67,7 +70,12 @@ def __call__(self, method: str = "QR"):
 
 ```
 
-# Other Functionalities (TODO: ADD)
+# Other Functionalities 
+- Memory efficient (Streaming) version
+- Simulating phenotype
+- Getting trace estimate
+- Getting other summary statistics (e.g., XtXz)
+- To be added
 
 # Comparison between PyRHE & Original RHE
 ## Accuracy of Estimation
@@ -79,7 +87,8 @@ def __call__(self, method: str = "QR"):
 <img width="498" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/e3375751-fe0a-4c24-9bf8-84dff9d91634">
 
 # Example testing pipeline:
-The package also supports you to run testing pipelines when some files are missing (e.g., annotation file). Here is the example testing pipeline.
+The package also supports you to run testing pipelines when some files are missing (e.g., annotation file). In addition, it supports running the [original RHE](https://github.com/sriramlab/RHE-mc) within the package. Here is the example testing pipeline.
+
 **1. Set Up**
 Create a `.env` file and specify the `RESULT_DIR` (where you store the results) and `DATA_DIR` (store the simulated phenotype, generated annotation file, etc.)
 
@@ -96,15 +105,14 @@ If want to add covariate, do
 cd core
 python simulate_pheno.py -b {num_bin} -c {cov_file_path}
 ```
+
 **4. Run original RHE**  
 ```
 python run_original.py -g {geno_path} -b {num_bin} -c {cov_file_path} -k {num_vec} -jn {num_block} --output {output_file}
 ```
 Then parse the outputs using `parse_output.py`
-**5. Run python RHE**
+
+**5. Run PyRHE**
 ```
 python run_rhe.py -g {geno_path} -b {num_bin} -k {num_vec} -c {cov_file_path} -jn {num_block} --output {output_file}
 ```
-
-**6. Visualize**
-run cells in `plotting.ipynb`.

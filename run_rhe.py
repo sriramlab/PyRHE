@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 import numpy as np
-from src.core import RHE, StreamingRHE
+from pyrhe.src.core import RHE, StreamingRHE
 from constant import DATA_DIR, RESULT_DIR, HOME_DIR
 import json
 import time

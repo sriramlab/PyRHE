@@ -15,7 +15,6 @@ setup(
         'pandas>=1.5.1',
         'python-dotenv==1.0.1',
         'scipy>=1.10.1',
-        'torch>=1.12.1',
         'tqdm==4.65.0',
     ],
     classifiers=[
