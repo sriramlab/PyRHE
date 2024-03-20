@@ -12,6 +12,10 @@ pip install pyrhe/
 
 
 # Example Usage
+```
+python run_rhe.py -g {geno_path} --p {pheno_path} -c {covariate_path} --annot {annot_path}-b {num_bin} -k {num_vec} -jn {num_block} --device {device} --cuda_num {cuda_num} --output {output_file} (--streaming)
+```
+Or you can incorporate RHE in your own project using:
 
 ```python
 from pyrhe.src.core import RHE
@@ -35,6 +39,7 @@ rhe = RHE(
 sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs = rhe()
 
 ```
+
 You can call `rhe()` once to get all the estimation summary. In addition, `rhe()` call is composed of several functions that can be used individually (e.g., error estimation). 
 
 ```python
@@ -76,6 +81,8 @@ def __call__(self, method: str = "QR"):
 
 # Comparison between PyRHE & Original RHE
 ## Accuracy of Estimation
+<img width="1141" alt="image" src="https://github.com/jiayini1119/PyRHE/assets/105399924/030dd9f0-c359-409c-934f-8d6114709582">
+
 <img width="1141" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/71b5cff8-2fdf-42ae-bf29-50e8b93e75f4">
 
 ## Runtime Comparision
