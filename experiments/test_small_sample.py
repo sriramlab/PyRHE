@@ -1,8 +1,8 @@
 
 import sys
 sys.path.insert(0, '/u/project/sriram/jiayini/RHE_project/')
-from src.core.rhe import RHE
-from src.core.streaming_rhe import StreamingRHE
+from pyrhe.src.core.rhe import RHE
+from pyrhe.src.core.streaming_rhe import StreamingRHE
 geno_path="/u/project/sriram/jiayini/RHE_project/data_25k/simple/actual_geno_1"
 
 # X = np.array([
