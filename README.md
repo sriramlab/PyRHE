@@ -7,7 +7,7 @@ PyRHE is a Python package for RHE-mc (Randomized Haseman–Elston regression for
 ```
 git clone git@github.com:jiayini1119/PyRHE.git
 pip install pyrhe/
-# Then install proper version of PyTorch from https://pytorch.org/ 
+# Also install proper version of PyTorch from https://pytorch.org/ 
 ```
 
 

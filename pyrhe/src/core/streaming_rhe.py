@@ -1,6 +1,5 @@
 import time
-import torch
-import queue
+from typing import Optional
 from tqdm import tqdm
 from pyrhe.src.core.rhe import RHE
 from typing import List, Tuple
@@ -21,14 +20,14 @@ class StreamingRHE(RHE):
         num_bin: int = 8,
         num_jack: int = 1,
         num_random_vec: int = 10,
-        device: torch.device = torch.device("cpu"),
-        cuda_num: int = None,
-        num_workers: int = None,
+        device: str = "cpu",
+        cuda_num: Optional[int] = None,
+        num_workers: Optional[int] = None,
         multiprocessing: bool = True,
         verbose: bool = True,
-        seed: int = None,
+        seed: Optional[int] = None,
         get_trace: bool = False,
-        trace_dir: str = None,
+        trace_dir: Optional[str] = None,
     ):
         super().__init__(
             geno_file=geno_file,

@@ -29,13 +29,13 @@ class RHE:
         num_jack: int = 1,
         num_random_vec: int = 10,
         device: str = "cpu",
-        cuda_num: int = None,
-        num_workers: int = None,
+        cuda_num: Optional[int] = None,
+        num_workers: Optional[int] = None,
         multiprocessing: bool = True,
         verbose: bool = True,
         seed: Optional[int] = None,
         get_trace: bool = False,
-        trace_dir: str = None,
+        trace_dir: Optional[str] = None,
     ):
 
         print(f"Using device {device}")
