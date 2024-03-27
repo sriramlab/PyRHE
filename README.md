@@ -5,7 +5,7 @@ PyRHE is an efficient and portable Python package for RHE-mc (Randomized Haseman
 # Installation 
 
 ```
-git clone git@github.com:jiayini1119/PyRHE.git
+git clone git@github.com:sriramlab/PyRHE.git
 pip install pyrhe/
 # Also install proper version of PyTorch from https://pytorch.org/ 
 ```
