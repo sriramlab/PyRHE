@@ -11,27 +11,27 @@ def read_bim(filename):
                     continue
 
     except FileNotFoundError:
-        raise FileNotFoundError("Error: The bim file could not be found.")
+        raise FileNotFoundError(f"Error: The bim file {filename} could not be found.")
     except IOError:
         raise
     except Exception as e:
-        raise 
+        raise e
 
     num_snp = linenum
     return num_snp
 
 def read_fam(filename):
-    try: 
-        with open(filename, 'r') as file:
-            i = sum(1 for line in file)
-        return i
+    try:
+        df = pd.read_csv(filename, delim_whitespace=True, header=None)
+        num_individuals = df.shape[0]
+        return num_individuals, df
     except FileNotFoundError:
-        raise FileNotFoundError("Error: The fam file could not be found.")
+        raise FileNotFoundError(f"Error: The fam file '{filename}' could not be found.")
     except IOError:
         raise
     except Exception as e:
-        raise 
-
+        raise e
+    
 def read_annot(filename, Njack):
     Nbin = 0
     annot_bool = []
@@ -54,11 +54,11 @@ def read_annot(filename, Njack):
                 annot_bool.append(tokens)
         
     except FileNotFoundError:
-        raise FileNotFoundError("Error: The annot file could not be found.")
+        raise FileNotFoundError("Error: The annotation file could not be found.")
     except IOError:
         raise
     except Exception as e:
-        raise 
+        raise e
     
     annot_bool = np.array(annot_bool)
 
@@ -112,22 +112,34 @@ def generate_annot(filename, num_snp, num_bin):
         raise 
 
 
-def read_cov(filename, covname="", std: bool=False):
-    df = pd.read_csv(filename, delim_whitespace=True)
+def read_cov(filename, covname="", std: bool=False, missing_indvs=None):
+    try: 
+        df = pd.read_csv(filename, delim_whitespace=True)
+        
+        if missing_indvs is None:
+            missing_indvs = []
 
-    if 'FID' in df.columns:
-        df.drop('FID', axis=1, inplace=True)
-    if 'IID' in df.columns:
-        df.drop('IID', axis=1, inplace=True)
+        if missing_indvs:
+            df = df.drop(index=missing_indvs, errors='ignore')
 
-    if covname:
-        df = df[[covname]]
+        df.drop(columns=['FID', 'IID'], errors='ignore', inplace=True)
 
-    df.replace(['NA', -9], np.nan, inplace=True)
+        if covname:
+            df = df[[covname]]
 
-    df.fillna(df.mean(), inplace=True)
+        is_missing = df.replace('NA', np.nan).isin([np.nan, -9]).any(axis=1)
+        newly_missing_indvs = df.index[is_missing].tolist()
+        all_missing_indvs = missing_indvs + newly_missing_indvs
+        df = df[~is_missing]
 
-    if std:
-        df = (df - df.mean()) / df.std(ddof=1)
+        if std:
+            df = (df - df.mean()) / df.std(ddof=1)
 
-    return df.values
+        return df.values, all_missing_indvs
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Error: The covariate file '{filename}' could not be found.")
+    except IOError:
+        raise
+    except Exception as e:
+        raise e

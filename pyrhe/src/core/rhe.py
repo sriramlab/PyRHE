@@ -1,7 +1,5 @@
 import os
 import time
-import sys
-import signal
 import torch
 import scipy
 import atexit
@@ -15,6 +13,7 @@ import multiprocessing
 from multiprocessing import shared_memory, Manager
 from pyrhe.src.core.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.mat_mul import *
+from pyrhe.src.util.types import *
 
 
 
@@ -28,6 +27,7 @@ class RHE:
         num_bin: int = 8,
         num_jack: int = 1,
         num_random_vec: int = 10,
+        geno_impute_method: GenoImputeMethod = "binary",
         device: str = "cpu",
         cuda_num: Optional[int] = None,
         num_workers: Optional[int] = None,
@@ -38,22 +38,23 @@ class RHE:
         trace_dir: Optional[str] = None,
     ):
 
-        print(f"Using device {device}")
-        self.multiprocessing = multiprocessing
-    
-        # Seed
-        self.seed = int(time.process_time()) if seed is None else seed
-        np.random.seed(self.seed)
-
         self.num_jack = num_jack
         self.num_blocks = num_jack
         self.num_random_vec = num_random_vec
         self.verbose = verbose
+        self.num_bin = num_bin if annot_file is None else None
+        self.geno_impute_methods = geno_impute_method
 
-        if annot_file is None:
-            self.num_bin = num_bin
-        else:
-            self.num_bin = None
+
+        ## Config
+        print(f"Using device {device}")
+        self.multiprocessing = multiprocessing
+        # atexit
+        if self.multiprocessing:
+            atexit.register(self._finalize)
+        # Seed
+        self.seed = int(time.process_time()) if seed is None else seed
+        np.random.seed(self.seed)
 
         self.device_name, self.cuda_num = device, cuda_num
         self._init_device(self.device_name, self.cuda_num)
@@ -78,7 +79,7 @@ class RHE:
 
         # read fam and bim file
         self.geno_bed = open_bed(geno_file + ".bed")
-        self.num_indv_original = read_fam(geno_file + ".fam")
+        self.num_indv_original, fam_df = read_fam(geno_file + ".fam")
         self.num_snp = read_bim(geno_file + ".bim")
 
 
@@ -96,27 +97,32 @@ class RHE:
         # read pheno file and center
         self.pheno_file = pheno_file
         if pheno_file is not None:
-            self.pheno, self.missing_indv = read_pheno(pheno_file)
+            self.pheno, missing_indv = read_pheno(pheno_file)
             self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
         else:
             self.pheno = None
-            self.missing_indv = []
-        
-        self.num_indv = self.num_indv_original - len(self.missing_indv)
-
+            missing_indv = []
+    
         # read covariate file
         if cov_file is None:
             self.use_cov = False
             self.cov_matrix = None
             self.Q = None
+            self.missing_indv = missing_indv
         else:
             self.use_cov = True
-            cov_matrix = read_cov(cov_file)
+            cov_matrix, self.missing_indv = read_cov(cov_file, missing_indv)
             self.cov_matrix = np.delete(cov_matrix, self.missing_indv, axis=0)
             del cov_matrix
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
+        
+        self.num_indv = self.num_indv_original - len(self.missing_indv)
+        for idx, missing_idx in enumerate(self.missing_indv, start=1):
+            col0_value = fam_df.iloc[missing_idx, 0]
+            col1_value = fam_df.iloc[missing_idx, 1]
+            print(f"missing individual {idx}: column 0:{col0_value} column 1:{col1_value}")
 
-         # track subsample size
+        # track subsample size
         if not self.multiprocessing:
             self.M = np.zeros((self.num_jack + 1, self.num_bin))
             self.M[self.num_jack] = self.len_bin
@@ -132,10 +138,6 @@ class RHE:
         if self.get_trace:
             if self.num_bin > 1:
                 raise ValueError("Save trace failed, only supports saving tracing for single bin case.")
-
-        # atexit
-        if self.multiprocessing:
-            atexit.register(self._finalize)
     
 
     def _init_device(self, device, cuda_num):
@@ -222,19 +224,20 @@ class RHE:
         X_imp = X
         if simulate_geno:
             for m in range(M):
-                observed_mask = ~np.isnan(X[:, m])
-                observed_values = X[observed_mask, m]
-                
-                observed_ct = observed_values.size
-                observed_sum = np.sum(observed_values)
-                observed_mean = 0.5 * observed_sum / observed_ct
-                
+                observed_mean = np.nanmean(X[:, m])
                 missing_mask = np.isnan(X[:, m])
-                X_imp[missing_mask, m] = self._simulate_geno_from_random(observed_mean)
-        
+                if self.geno_impute_methods == GenoImputeMethod.BINARY.value:
+                    X_imp[missing_mask, m] = self._simulate_geno_from_random(observed_mean * 0.5)
+                elif self.geno_impute_methods == GenoImputeMethod.MEAN.value:
+                    X_imp[missing_mask, m] = observed_mean
+                else:
+                    X_imp[missing_mask, m] = 0
+                        
         means = np.mean(X_imp, axis=0)
         stds = 1/np.sqrt(means*(1-0.5*means))
+
         X_imp = (X_imp - means) * stds
+              
         return X_imp
 
     def solve_linear_equation(self, X, y):
@@ -499,22 +502,26 @@ class RHE:
                             self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
     def _finalize(self):
-        self.XXz_shm.close()
-        self.yXXy_shm.close()
-        if self.use_cov:
-            self.UXXz_shm.close()
-            self.XXUz_shm.close()
+        if hasattr(self, 'XXz_shm'):
+            self.XXz_shm.close()
+            self.XXz_shm.unlink()
         
-        self.M_shm.close()
-
-        self.XXz_shm.unlink()
-        self.yXXy_shm.unlink()
-        if self.use_cov:
+        if hasattr(self, 'yXXy_shm'):
+            self.yXXy_shm.close()
+            self.yXXy_shm.unlink()
+        
+        if hasattr(self, 'UXXz_shm'):
+            self.UXXz_shm.close()
             self.UXXz_shm.unlink()
+        
+        if hasattr(self, 'XXUz_shm'):
+            self.XXUz_shm.close()
             self.XXUz_shm.unlink()
         
-        self.M_shm.unlink()
-        
+        if hasattr(self, 'M_shm'):
+            self.M_shm.close()
+            self.M_shm.unlink()
+            
      
     def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         """

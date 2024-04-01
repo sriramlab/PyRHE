@@ -21,3 +21,4 @@ generated_annot
 *.trace
 
 .env
+test_small_sample.py
