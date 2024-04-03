@@ -1,0 +1,23 @@
+[PyRHE_Config]
+geno = test
+pheno = test.pheno
+covariate=test.cov
+annot=single.annot
+num_vec = 10
+num_bin = 1
+num_block = 100
+streaming = no
+output = test.out
+get_trace = no
+benchmark_runtime = no
+
+
+[Original_RHE_Config]
+geno = test
+pheno = test.pheno
+covariate=test.cov
+annot = single.annot
+num_vec = 10
+num_bin = 1
+num_block = 100
+streaming = no

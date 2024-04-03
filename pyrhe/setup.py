@@ -16,6 +16,7 @@ setup(
         'python-dotenv==1.0.1',
         'scipy>=1.10.1',
         'tqdm==4.65.0',
+        'configparser>=6.0.1'
     ],
     classifiers=[
         'License :: OSI Approved :: MIT License',

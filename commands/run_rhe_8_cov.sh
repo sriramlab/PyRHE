@@ -1,7 +1,7 @@
 #!/bin/bash
 geno_path="/u/home/j/jiayini/data/200k_allsnps"
 pheno_dir_path="/u/home/j/jiayini/project-sriram/PyRHE/data_200k/pheno_with_cov/bin_8"
-covariate_path="/home/jiayini1119/data/200k.covar"
+covariate_path="/u/home/j/jiayini/data/200k.covar"
 num_vec=10
 num_bin=8
 num_block=100

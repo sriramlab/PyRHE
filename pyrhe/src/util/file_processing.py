@@ -122,7 +122,11 @@ def read_cov(filename, covname="", std: bool=False, missing_indvs=None):
         if missing_indvs:
             df = df.drop(index=missing_indvs, errors='ignore')
 
-        df.drop(columns=['FID', 'IID'], errors='ignore', inplace=True)
+        if 'FID' in df.columns:
+            df.drop('FID', axis=1, inplace=True)
+        if 'IID' in df.columns:
+            df.drop('IID', axis=1, inplace=True)
+
 
         if covname:
             df = df[[covname]]

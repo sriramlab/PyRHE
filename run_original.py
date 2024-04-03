@@ -4,6 +4,7 @@ import numpy as np
 import argparse
 import time
 from constant import RESULT_DIR, DATA_DIR
+from run_rhe import parse_config, convert_to_correct_type
 
 def main(args):
     annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}" if args.annot is None else args.annot
@@ -58,7 +59,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Original_RHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--benchmark_runtime', action='store_true', help='benchmark the runtime')
-    parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
+    parser.add_argument('--geno', '-g', type=str, help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
     parser.add_argument('--annot',  type=str, default=None, help='Annotation file path')
@@ -66,8 +67,16 @@ if __name__ == '__main__':
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks.')
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
+    parser.add_argument('--config', type=str, help='Configuration file path')
 
     args = parser.parse_args()
+
+    if args.config:
+        config_args = parse_config(args.config, 'Original_RHE_Config')
+        for key, default in vars(args).items():
+            if key in config_args:
+                setattr(args, key, convert_to_correct_type(config_args[key], default))
+    
     
     if args.benchmark_runtime:
         runtimes = [] 

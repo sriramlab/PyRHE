@@ -113,6 +113,7 @@ class RHE:
             self.use_cov = True
             cov_matrix, self.missing_indv = read_cov(cov_file, missing_indv)
             self.cov_matrix = np.delete(cov_matrix, self.missing_indv, axis=0)
+            print(self.cov_matrix)
             del cov_matrix
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
         

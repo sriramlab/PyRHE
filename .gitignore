@@ -22,3 +22,6 @@ generated_annot
 
 .env
 test_small_sample.py
+
+
+!example/**/*

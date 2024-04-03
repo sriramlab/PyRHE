@@ -1,11 +1,27 @@
 import argparse
 import os
-import torch
 import numpy as np
 from pyrhe.src.core import RHE, StreamingRHE
-from constant import DATA_DIR, RESULT_DIR, HOME_DIR
+from constant import DATA_DIR, RESULT_DIR
 import json
 import time
+import configparser
+
+
+def parse_config(config_path, config_name):
+    config = configparser.ConfigParser()
+    config.read(config_path)
+    return dict(config.items(config_name))
+
+def convert_to_correct_type(value, default):
+    if value.lower() == 'none':
+        return None
+    elif isinstance(default, bool):
+        return value.lower() in ['true', '1', 't', 'y', 'yes']
+    elif isinstance(default, int):
+        return int(value)
+    else:
+        return value
 
 def main(args):
 
@@ -92,7 +108,7 @@ if __name__ == '__main__':
     parser.add_argument('--get_trace', action='store_true', help='get the trace estimate')
     parser.add_argument('--benchmark_runtime', action='store_true', help='benchmark the runtime')
 
-    parser.add_argument('--geno', '-g', type=str, default="/home/jiayini1119/data/200k_allsnps", help='genotype file path')
+    parser.add_argument('--geno', '-g', type=str, help='genotype file path')
     parser.add_argument('--pheno', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
     parser.add_argument('--annot', type=str, default=None, help='Annotation file path')
@@ -104,9 +120,15 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default="cpu", help="device to use")
     parser.add_argument('--cuda_num', type=int, default=None, help='cuda number')
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
+    parser.add_argument('--config', type=str, help='Configuration file path')
 
-    
     args = parser.parse_args()
+
+    if args.config:
+        config_args = parse_config(args.config, 'PyRHE_Config')
+        for key, default in vars(args).items():
+            if key in config_args:
+                setattr(args, key, convert_to_correct_type(config_args[key], default))
 
     if args.benchmark_runtime:
         runtimes = [] 
