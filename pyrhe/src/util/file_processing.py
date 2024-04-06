@@ -84,7 +84,8 @@ def read_pheno(filename):
 
         for i, line in enumerate(lines):
             columns = line.strip().split()
-            if columns == "NA" or float(columns[2]) == -9:
+            if columns[2] == "NA" or float(columns[2]) == -9:
+                y.append(-9)
                 missing_indv.append(i)
             else:
                 y.append(float(columns[2]))
@@ -112,7 +113,7 @@ def generate_annot(filename, num_snp, num_bin):
         raise 
 
 
-def read_cov(filename, covname="", std: bool=False, missing_indvs=None):
+def read_cov(filename, std: bool=False, missing_indvs=None):
     try: 
         df = pd.read_csv(filename, delim_whitespace=True)
         
@@ -126,10 +127,6 @@ def read_cov(filename, covname="", std: bool=False, missing_indvs=None):
             df.drop('FID', axis=1, inplace=True)
         if 'IID' in df.columns:
             df.drop('IID', axis=1, inplace=True)
-
-
-        if covname:
-            df = df[[covname]]
 
         is_missing = df.replace('NA', np.nan).isin([np.nan, -9]).any(axis=1)
         newly_missing_indvs = df.index[is_missing].tolist()

@@ -111,17 +111,15 @@ class RHE:
             self.missing_indv = missing_indv
         else:
             self.use_cov = True
-            cov_matrix, self.missing_indv = read_cov(cov_file, missing_indv)
-            self.cov_matrix = np.delete(cov_matrix, self.missing_indv, axis=0)
-            print(self.cov_matrix)
-            del cov_matrix
+            self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv)
+            self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
         
         self.num_indv = self.num_indv_original - len(self.missing_indv)
         for idx, missing_idx in enumerate(self.missing_indv, start=1):
             col0_value = fam_df.iloc[missing_idx, 0]
             col1_value = fam_df.iloc[missing_idx, 1]
-            print(f"missing individual {idx}: column 0:{col0_value} column 1:{col1_value}")
+            print(f"missing individual {idx}: FID:{col0_value} IID:{col1_value}")
 
         # track subsample size
         if not self.multiprocessing:
