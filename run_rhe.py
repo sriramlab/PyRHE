@@ -114,7 +114,7 @@ if __name__ == '__main__':
     parser.add_argument('--annot', type=str, default=None, help='Annotation file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
-    parser.add_argument('--num_workers', type=int, default=5, help='Number of workers')
+    parser.add_argument('--num_workers', type=int, default=8, help='Number of workers')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
     parser.add_argument('--seed', default=None, help='Random seed')
     parser.add_argument('--device', type=str, default="cpu", help="device to use")

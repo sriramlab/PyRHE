@@ -2,6 +2,8 @@ import os
 import configparser
 import subprocess
 import argparse
+import fcntl
+from constant import RESULT_DIR
 
 def main(args):
     phenotypes_to_test = [
@@ -18,34 +20,44 @@ def main(args):
     ]
 
     config_file_path = "./config_real_original.txt" if args.use_original else "./config_real_pyrhe.txt"
-
-
     phenotype_files_dir = "/u/project/sriram/alipazok/Data/new_ukkb_phenotypes"
 
     for phenotype in phenotypes_to_test:
-        config = configparser.ConfigParser()
-        config.read(config_file_path)
-        
-        config_name = "PyRHE_Config" if not args.use_original else "Original_RHE_Config"
 
-        config[config_name]["pheno"] = os.path.join(phenotype_files_dir, f"{phenotype}.pheno")
-        config[config_name]["covariate"] = os.path.join(phenotype_files_dir, f"{phenotype}.covar")
-        config[config_name]["output"] = f"{phenotype}"
-        config[config_name]["num_bin"] = str(args.num_bin)
-        if args.num_bin == 1:
-            config[config_name]["annot"] = "/u/scratch/z/zhengton/data/single.annot.txt"
+        if args.use_original:
+            result_file_path = os.path.join(RESULT_DIR, "original_result", "cov", f"bin_{args.num_bin}", f"{phenotype}.txt")
         else:
-            config[config_name]["annot"] = "/u/scratch/z/zhengton/data/2maf_4ld_array_annot.txt"
+            result_file_path = os.path.join(RESULT_DIR, "pyrhe_output", "cov", f"bin_{args.num_bin}", f"{phenotype}.json")
+        
+        if os.path.exists(result_file_path):
+            print(f"Skipping {phenotype} as result file already exists.")
+            continue
+            
+        print(f"Processing {phenotype}...")
 
+        with open(config_file_path, "r+") as config_file:
+            fcntl.flock(config_file, fcntl.LOCK_EX)
+            config = configparser.ConfigParser()
+            config.read(config_file_path)
+            config_name = "PyRHE_Config" if not args.use_original else "Original_RHE_Config"
+            config.set(config_name, "pheno", os.path.join(phenotype_files_dir, f"{phenotype}.pheno"))
+            config.set(config_name, "covariate", os.path.join(phenotype_files_dir, f"{phenotype}.covar"))
+            config.set(config_name, "output", f"{phenotype}")
+            config.set(config_name, "num_bin", str(args.num_bin))
+            if args.num_bin == 1:
+                config.set(config_name, "annot", "/u/scratch/z/zhengton/data/single.annot.txt")
+            else:
+                config.set(config_name, "annot", "/u/scratch/z/zhengton/data/2maf_4ld_array_annot.txt")
+            config_file.seek(0) 
+            config.write(config_file)  
+            config_file.truncate()  
 
-        with open(config_file_path, "w") as config_file:
-            config.write(config_file)
+            fcntl.flock(config_file, fcntl.LOCK_UN)
 
         if args.use_original:
             subprocess.run(["python", "./run_original.py", "--config", config_file_path])
         else:
             subprocess.run(["python", "./run_rhe.py", "--config", config_file_path])
-
 
 
 if __name__ == '__main__':
