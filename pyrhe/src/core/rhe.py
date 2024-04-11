@@ -28,6 +28,7 @@ class RHE:
         num_jack: int = 1,
         num_random_vec: int = 10,
         geno_impute_method: GenoImputeMethod = "binary",
+        cov_impute_method: CovImputeMethod = "ignore",
         device: str = "cpu",
         cuda_num: Optional[int] = None,
         num_workers: Optional[int] = None,
@@ -98,7 +99,7 @@ class RHE:
         self.pheno_file = pheno_file
         if pheno_file is not None:
             self.pheno, missing_indv = read_pheno(pheno_file)
-            self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
+            # self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
         else:
             self.pheno = None
             missing_indv = []
@@ -109,11 +110,14 @@ class RHE:
             self.cov_matrix = None
             self.Q = None
             self.missing_indv = missing_indv
+            self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
         else:
             self.use_cov = True
-            self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv)
+            self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv, cov_impute_method=CovImputeMethod)
             self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
+        
+        self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
         
         self.num_indv = self.num_indv_original - len(self.missing_indv)
         for idx, missing_idx in enumerate(self.missing_indv, start=1):
@@ -223,14 +227,12 @@ class RHE:
         X_imp = X
         if simulate_geno:
             for m in range(M):
-                observed_mean = np.nanmean(X[:, m])
                 missing_mask = np.isnan(X[:, m])
                 if self.geno_impute_methods == GenoImputeMethod.BINARY.value:
+                    observed_mean = np.nanmean(X[:, m])
                     X_imp[missing_mask, m] = self._simulate_geno_from_random(observed_mean * 0.5)
-                elif self.geno_impute_methods == GenoImputeMethod.MEAN.value:
-                    X_imp[missing_mask, m] = observed_mean
                 else:
-                    X_imp[missing_mask, m] = 0
+                    X_imp[missing_mask, m] = 0 # mean imputation is just filling with 0 after standardization
                         
         means = np.mean(X_imp, axis=0)
         stds = 1/np.sqrt(means*(1-0.5*means))

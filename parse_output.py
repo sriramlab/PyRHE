@@ -3,8 +3,8 @@ import os
 import json
 import re
 
-parser = argparse.ArgumentParser(description='parse output file for original RHE')
-parser.add_argument('--folder_path', '-p', type=str)
+parser = argparse.ArgumentParser(description='Parse output file for original RHE')
+parser.add_argument('--folder_path', '-p', required=True, type=str, help='Path to the folder containing result files')
 
 args = parser.parse_args()
 
@@ -34,25 +34,34 @@ def parse_file_content(file_content):
         "runtime": float(runtime_match.group(1)) if runtime_match else None
     }
 
-    return data
+    return data, runtime_match is None
 
 def process_folder(folder_path):
     all_data = {}
+    missing_runtime_files = []
+
     for root, dirs, files in os.walk(folder_path):
-        for file in files:
+        for file in sorted(files):
             if file.endswith(".txt"):
                 file_path = os.path.join(root, file)
                 with open(file_path, 'r') as f:
                     content = f.read()
-                    file_data = parse_file_content(content)
+                    file_data, is_missing_runtime = parse_file_content(content)
                     all_data[file_path] = file_data
+                    if is_missing_runtime:
+                        missing_runtime_files.append(file_path)
 
-    return all_data
+    return all_data, missing_runtime_files
 
 folder_path = args.folder_path
-data = process_folder(folder_path)
+data, missing_runtime_files = process_folder(folder_path)
 
 output_file_path = os.path.join(folder_path, "summary.json")
 
 with open(output_file_path, "w") as json_file:
     json.dump(data, json_file, indent=4)
+
+if missing_runtime_files:
+    print("Files missing runtime data:")
+    for file in missing_runtime_files:
+        print(file)

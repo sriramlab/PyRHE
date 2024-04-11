@@ -18,16 +18,19 @@ def main(args):
         "vitamin_d.R", "blood_platelet", "triglycerides", "blood_rbc_count",
         "blood_eosinophil", "calcium", "blood_mpv", "hdl", "apo_a", "glucose"
     ]
+   
 
     config_file_path = "./config_real_original.txt" if args.use_original else "./config_real_pyrhe.txt"
     phenotype_files_dir = "/u/project/sriram/alipazok/Data/new_ukkb_phenotypes"
 
     for phenotype in phenotypes_to_test:
 
+        cov_status = "no_cov" if args.no_cov else "cov"
+
         if args.use_original:
-            result_file_path = os.path.join(RESULT_DIR, "original_result", "cov", f"bin_{args.num_bin}", f"{phenotype}.txt")
+            result_file_path = os.path.join(RESULT_DIR, "original_result", cov_status, f"bin_{args.num_bin}", f"{phenotype}.txt")
         else:
-            result_file_path = os.path.join(RESULT_DIR, "pyrhe_output", "cov", f"bin_{args.num_bin}", f"{phenotype}.json")
+            result_file_path = os.path.join(RESULT_DIR, "pyrhe_output", cov_status, f"bin_{args.num_bin}", f"{phenotype}.json")
         
         if os.path.exists(result_file_path):
             print(f"Skipping {phenotype} as result file already exists.")
@@ -41,7 +44,8 @@ def main(args):
             config.read(config_file_path)
             config_name = "PyRHE_Config" if not args.use_original else "Original_RHE_Config"
             config.set(config_name, "pheno", os.path.join(phenotype_files_dir, f"{phenotype}.pheno"))
-            config.set(config_name, "covariate", os.path.join(phenotype_files_dir, f"{phenotype}.covar"))
+            cov = "None" if args.no_cov else os.path.join(phenotype_files_dir, f"{phenotype}.covar")
+            config.set(config_name, "covariate", cov)
             config.set(config_name, "output", f"{phenotype}")
             config.set(config_name, "num_bin", str(args.num_bin))
             if args.num_bin == 1:
@@ -64,6 +68,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--num_bin', '-b', type=int, default=1, help='Number of bins')
     parser.add_argument('--use_original', action='store_true')
+    parser.add_argument('--no_cov', action='store_true')
    
     args = parser.parse_args()
 

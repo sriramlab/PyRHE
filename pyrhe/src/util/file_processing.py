@@ -113,7 +113,7 @@ def generate_annot(filename, num_snp, num_bin):
         raise 
 
 
-def read_cov(filename, std: bool=False, missing_indvs=None):
+def read_cov(filename, std: bool=False, missing_indvs=None, cov_impute_method="ignore"):
     try: 
         df = pd.read_csv(filename, delim_whitespace=True)
         
@@ -127,11 +127,20 @@ def read_cov(filename, std: bool=False, missing_indvs=None):
             df.drop('FID', axis=1, inplace=True)
         if 'IID' in df.columns:
             df.drop('IID', axis=1, inplace=True)
-
+        
         is_missing = df.replace('NA', np.nan).isin([np.nan, -9]).any(axis=1)
         newly_missing_indvs = df.index[is_missing].tolist()
+
+        if cov_impute_method == "ignore":
+            df = df[~is_missing]
+
+        else:  # mean imputation
+            df = df.replace({'NA': np.nan, '-9': np.nan})
+            for column in df.columns:
+                mean_val = df[column].mean()
+                df[column].fillna(mean_val, inplace=True)
+        
         all_missing_indvs = missing_indvs + newly_missing_indvs
-        df = df[~is_missing]
 
         if std:
             df = (df - df.mean()) / df.std(ddof=1)
