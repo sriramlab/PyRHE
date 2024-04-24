@@ -279,7 +279,7 @@ class RHE:
         for i in range(self.num_bin):
             all_gen.append(geno[:, bin_to_snp_indices[i]])
 
-        return all_gen
+        return all_gen, bin_to_snp_indices
     
     def read_geno(self, start, end):
         try:
@@ -315,6 +315,20 @@ class RHE:
         sub_annot = self.annot_matrix[start:end]
 
         return subsample, sub_annot
+    
+
+    def _get_annot_subsample(self, jack_index: int) -> np.ndarray:
+        step_size = self.num_snp // self.num_jack
+        step_size_rem = self.num_snp % self.num_jack
+        chunk_size = step_size if jack_index < (self.num_jack - 1) else step_size + step_size_rem
+        start = jack_index * step_size
+        end = start + chunk_size
+        mask = np.ones(self.num_snp, dtype=bool)
+        mask[start:end] = False
+
+        sub_annot = self.annot_matrix[mask]
+
+        return sub_annot
 
 
     def regress_pheno(self, cov_matrix, pheno):
@@ -372,36 +386,36 @@ class RHE:
             if self.multiprocessing:
                 self._init_device(self.device_name, self.cuda_num)
 
-            if self.multiprocessing:
-                # set up shared memory in child
-                XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
-                XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
-                XXz.fill(0)
+            # if self.multiprocessing:
+            #     # set up shared memory in child
+            #     XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
+            #     self.XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
+            #     self.XXz.fill(0)
 
-                yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
-                yXXy = np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=yXXy_shm.buf)
-                yXXy.fill(0)
+            #     yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
+            #     self.yXXy = np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=yXXy_shm.buf)
+            #     self.yXXy.fill(0)
 
-                if self.use_cov:
-                    UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
-                    UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
-                    UXXz.fill(0)
+            #     if self.use_cov:
+            #         UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
+            #         self.UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
+            #         self.UXXz.fill(0)
 
-                    XXUz_shm = shared_memory.SharedMemory(name=self.XXUz_shm.name)
-                    XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
-                    XXUz.fill(0)
+            #         XXUz_shm = shared_memory.SharedMemory(name=self.XXUz_shm.name)
+            #         self.XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
+            #         self.XXUz.fill(0)
                 
-                M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
-                M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
-                M.fill(0)
-                M[self.num_jack] = self.len_bin
+            #     M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
+            #     self.M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
+            #     self.M.fill(0)
+            #     self.M[self.num_jack] = self.len_bin
 
-            else:
-                XXz = self.XXz
-                yXXy = self.yXXy
-                UXXz = self.UXXz
-                XXUz = self.XXUz
-                M = self.M
+            # # else:
+            # #     XXz = self.XXz
+            # #     yXXy = self.yXXy
+            # #     UXXz = self.UXXz
+            # #     XXUz = self.XXUz
+            # #     M = self.M
             
             for j in range(start_j, end_j):
                 print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
@@ -409,6 +423,7 @@ class RHE:
                 start_whole = time.time()
 
                 subsample, sub_annot = self._get_jacknife_subsample(j)
+
                 start = time.time()
                 subsample = self.impute_geno(subsample, simulate_geno=True)
 
@@ -416,17 +431,22 @@ class RHE:
 
                 end = time.time()
                 # print(f"impute time: {end - start}")
-                all_gen = self.partition_bins(subsample, sub_annot)
+                all_gen,  bin_to_snp_indices = self.partition_bins(subsample, sub_annot)
+
+                # Keep a dict of jackknife -> {bin_to_snp_indices}
+                bin_to_snp_indices 
+
 
                 for k, geno in enumerate(all_gen): 
                     X_kj = geno
-                    M[j][k] = M[self.num_jack][k] - geno.shape[1]
+                    self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1]
+                    print(f"j = {j}, k = {k}, M = {self.M[j][k]}")
                     for b in range(self.num_random_vec):
-                        XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                        self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
                         if self.use_cov:
-                            UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                            XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-                    yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+                            self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
+                            self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+                    self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
 
                 end_whole = time.time()
                 print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
@@ -646,7 +666,7 @@ class RHE:
 
             return SE
 
-    def compute_h2(self, sigma_est_jackknife: List[List], sigma_ests_total: List) -> Tuple[List[List], List]:
+    def compute_h2_nonoverlapping(self, sigma_est_jackknife: List[List], sigma_ests_total: List) -> Tuple[List[List], List]:
         """
         Compute h^2
 
@@ -684,6 +704,50 @@ class RHE:
         h2_jackknife, h2_total = h2[:-1, :], h2[-1, :]
 
         return h2_jackknife, h2_total
+
+    def compute_h2_overlapping(self, sigma_est_jackknife, sigma_ests_total):
+
+        sigma_ests = np.vstack([sigma_est_jackknife, sigma_ests_total[np.newaxis, :]])
+
+        h2 = []
+
+        for j in range(self.num_jack + 1):
+            sigma_ests_jack = sigma_ests[j]
+            total = 0
+            for k in range (self.num_bin):
+                total += sigma_ests_jack[k]
+            assert sigma_ests_jack[-1] == sigma_ests_jack[k+1]
+
+            h2_list = []
+
+            sub_annot = self._get_annot_subsample(jack_index=j)
+
+            for k in range(self.num_bin):
+                snp_indices = np.where(sub_annot[:, k] == 1)[0]
+                total_k = 0
+                for snp_idx in snp_indices:
+                    snp_bins = np.where(sub_annot[snp_idx, :] == 1)[0].tolist() # A list of bins that this snp belongs to 
+                    total_inner = 0
+                    for bin in snp_bins:
+                        total_inner += sigma_ests_jack[bin] / self.M[j][bin] if self.M[j][bin] != 0 else 0
+                    total_k += total_inner
+
+                total_k /= (total + sigma_ests_jack[-1])
+                h2_list.append(total_k)
+            
+            del sub_annot
+
+            # compute h_SNP^2
+            h_SNP_2 = total / (total + sigma_ests_jack[-1])
+            h2_list.append(h_SNP_2)
+            h2.append(h2_list)
+        
+        h2 = np.array(h2)
+        
+        h2_jackknife, h2_total = h2[:-1, :], h2[-1, :]
+
+        return h2_jackknife, h2_total
+
 
     def compute_enrichment(self, h2_jackknife, h2_total):
         """
@@ -765,14 +829,16 @@ class RHE:
             else:
                 print(f"sigma^2 estimate for bin {i}: {est}, SE: {sig_errs[i]}")
         
-        h2_jackknife, h2_total = self.compute_h2(sigma_est_jackknife, sigma_ests_total)
+        h2_jackknife, h2_total = self.compute_h2_nonoverlapping(sigma_est_jackknife, sigma_ests_total)
         h2_errs = self.estimate_error(h2_jackknife)
 
+        print("Nonoverlapping h2...")
         for i, est_h2 in enumerate(h2_total):
             if i == len(h2_total) - 1:
-                print(f"total h^2: {est_h2}, SE: {h2_errs[i]}")
+                print(f"total h^2 : {est_h2}, SE: {h2_errs[i]}")
             else:
                 print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs[i]}")
+
 
         enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
         enrichment_errs = self.estimate_error(enrichment_jackknife)
@@ -780,7 +846,25 @@ class RHE:
         for i, est_enrichment in enumerate(enrichment_total):
             print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
 
-        return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
+        
+        h2_jackknife_overlap, h2_total_overlap = self.compute_h2_overlapping(sigma_est_jackknife, sigma_ests_total)
+        h2_errs_overlap = self.estimate_error(h2_jackknife_overlap)
+
+        print("Overlapping h2...")
+        for i, est_h2 in enumerate(h2_total_overlap):
+            if i == len(h2_total_overlap) - 1:
+                print(f"total h^2 : {est_h2}, SE: {h2_errs_overlap[i]}")
+            else:
+                print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs_overlap[i]}")
+        
+
+        enrichment_jackknife_overlap, enrichment_total_overlap = self.compute_enrichment(h2_jackknife_overlap, h2_total_overlap)
+        enrichment_errs_overlap = self.estimate_error(enrichment_jackknife_overlap)
+
+        for i, est_enrichment in enumerate(enrichment_total_overlap):
+            print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs_overlap[i]}")
+
+        return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, h2_total_overlap, h2_errs_overlap, enrichment_total_overlap, enrichment_errs_overlap
     
 
     ############################ Other Functionalities #########################################

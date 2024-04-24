@@ -73,7 +73,7 @@ def main(args):
     # RHE
     start = time.time()
 
-    sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs = rhe()
+    sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, _, _, _, _ = rhe()
 
     end = time.time()
 
