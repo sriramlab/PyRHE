@@ -6,12 +6,13 @@ from tqdm import tqdm
 import torch
 
 class MultiprocessingHandler:
-    def __init__(self, target, work_ranges, device, trace_dict=None, method=None):
+    def __init__(self, target, work_ranges, device, trace_dict=None, method=None, streaming_estimate=False):
         self.target = target
         self.work_ranges = work_ranges
         self.device = device
         self.trace_dict = trace_dict
         self.method = method
+        self.streaming_estimate = streaming_estimate
         self.processes = []
         self.result_queue = multiprocessing.Queue()
 
@@ -30,7 +31,7 @@ class MultiprocessingHandler:
         if self.device.type == 'cuda':
             multiprocessing.set_start_method('spawn', force=True)
         for worker_num, (start_j, end_j) in enumerate(self.work_ranges):
-            if self.trace_dict is None:
+            if not self.streaming_estimate:
                 p = multiprocessing.Process(target=self.target, args=(worker_num, start_j, end_j))
             else:
                 p = multiprocessing.Process(target=self.target, args=(worker_num, self.method, start_j, end_j, self.result_queue, self.trace_dict))

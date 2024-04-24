@@ -8,6 +8,7 @@ import time
 import configparser
 
 
+
 def parse_config(config_path, config_name):
     config = configparser.ConfigParser()
     config.read(config_path)
@@ -34,6 +35,7 @@ def main(args):
     else:
         args.multiprocessing = True
     
+    # TODO: Add cov impute method and geno impute method to args. Make args compatible
     print(f"processing {pheno_file}")
     if args.streaming:
         rhe = StreamingRHE(
@@ -44,6 +46,8 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
+            geno_impute_method=args.geno_impute_method,
+            cov_impute_method=args.cov_impute_method,
             device=args.device,
             cuda_num =args.cuda_num,
             multiprocessing=args.multiprocessing,
@@ -61,7 +65,8 @@ def main(args):
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
-            cov_impute_method="mean", # TODO
+            geno_impute_method=args.geno_impute_method,
+            cov_impute_method=args.cov_impute_method,
             device=args.device,
             cuda_num =args.cuda_num,
             multiprocessing=args.multiprocessing,
@@ -121,6 +126,9 @@ if __name__ == '__main__':
     parser.add_argument('--device', type=str, default="cpu", help="device to use")
     parser.add_argument('--cuda_num', type=int, default=None, help='cuda number')
     parser.add_argument("--output", '-o', type=str, default="test", help='output of the file')
+    parser.add_argument('--geno_impute_method', type=str, default="binary", choices=['binary', 'mean'])
+    parser.add_argument('--cov_impute_method', type=str, default="ignore", choices=['ignore', 'mean'])
+
     parser.add_argument('--config', type=str, help='Configuration file path')
 
     args = parser.parse_args()

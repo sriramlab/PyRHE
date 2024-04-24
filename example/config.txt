@@ -9,6 +9,9 @@ streaming = no
 output = test.out
 get_trace = no
 benchmark_runtime = no
+geno_impute_method = binary
+cov_impute_method = ignore
+
 
 
 [Original_RHE_Config]

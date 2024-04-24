@@ -113,7 +113,7 @@ class RHE:
             self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
         else:
             self.use_cov = True
-            self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv, cov_impute_method=CovImputeMethod)
+            self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv, cov_impute_method=cov_impute_method)
             self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
         
@@ -279,7 +279,7 @@ class RHE:
         for i in range(self.num_bin):
             all_gen.append(geno[:, bin_to_snp_indices[i]])
 
-        return all_gen, bin_to_snp_indices
+        return all_gen
     
     def read_geno(self, start, end):
         try:
@@ -385,37 +385,6 @@ class RHE:
         try:
             if self.multiprocessing:
                 self._init_device(self.device_name, self.cuda_num)
-
-            # if self.multiprocessing:
-            #     # set up shared memory in child
-            #     XXz_shm = shared_memory.SharedMemory(name=self.XXz_shm.name)
-            #     self.XXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXz_shm.buf)
-            #     self.XXz.fill(0)
-
-            #     yXXy_shm = shared_memory.SharedMemory(name=self.yXXy_shm.name)
-            #     self.yXXy = np.ndarray((self.num_bin, self.num_jack + 1), dtype=np.float64, buffer=yXXy_shm.buf)
-            #     self.yXXy.fill(0)
-
-            #     if self.use_cov:
-            #         UXXz_shm = shared_memory.SharedMemory(name=self.UXXz_shm.name)
-            #         self.UXXz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=UXXz_shm.buf)
-            #         self.UXXz.fill(0)
-
-            #         XXUz_shm = shared_memory.SharedMemory(name=self.XXUz_shm.name)
-            #         self.XXUz = np.ndarray((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=XXUz_shm.buf)
-            #         self.XXUz.fill(0)
-                
-            #     M_shm = shared_memory.SharedMemory(name=self.M_shm.name)
-            #     self.M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=M_shm.buf)
-            #     self.M.fill(0)
-            #     self.M[self.num_jack] = self.len_bin
-
-            # # else:
-            # #     XXz = self.XXz
-            # #     yXXy = self.yXXy
-            # #     UXXz = self.UXXz
-            # #     XXUz = self.XXUz
-            # #     M = self.M
             
             for j in range(start_j, end_j):
                 print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
@@ -431,15 +400,12 @@ class RHE:
 
                 end = time.time()
                 # print(f"impute time: {end - start}")
-                all_gen,  bin_to_snp_indices = self.partition_bins(subsample, sub_annot)
-
-                # Keep a dict of jackknife -> {bin_to_snp_indices}
-                bin_to_snp_indices 
+                all_gen = self.partition_bins(subsample, sub_annot)
 
 
-                for k, geno in enumerate(all_gen): 
-                    X_kj = geno
-                    self.M[j][k] = self.M[self.num_jack][k] - geno.shape[1]
+                for k, X_kj in enumerate(all_gen): 
+                    print(X_kj)
+                    self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
                     print(f"j = {j}, k = {k}, M = {self.M[j][k]}")
                     for b in range(self.num_random_vec):
                         self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
