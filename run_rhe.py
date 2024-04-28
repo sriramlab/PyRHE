@@ -89,7 +89,7 @@ def main(args):
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
-            trace_dir=args.get_trace,
+            trace_dir=args.trace,
             samp_prev=args.samp_prev,
             pop_prev=args.pop_prev,
             log=log,
@@ -111,7 +111,7 @@ def main(args):
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
-            get_trace=args.get_trace,
+            get_trace=args.trace,
             samp_prev=args.samp_prev,
             pop_prev=args.pop_prev,
             log=log
@@ -156,13 +156,13 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
-    parser.add_argument('--get_trace', action='store_true', help='get the trace estimate')
+    parser.add_argument('--trace', '-tr', action='store_true', help='get the trace estimate')
     parser.add_argument('--benchmark_runtime', action='store_true', help='benchmark the runtime')
 
     parser.add_argument('--genotype', '-g', type=str, help='genotype file path')
     parser.add_argument('--phenotype', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
-    parser.add_argument('--annotation', type=str, default=None, help='Annotation file path')
+    parser.add_argument('--annotation', '-annot', type=str, default=None, help='Annotation file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_workers', type=int, default=8, help='Number of workers')

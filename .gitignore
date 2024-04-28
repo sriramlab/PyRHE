@@ -1,5 +1,6 @@
 .DS_Store
 **/*.egg-info
+.conda
 DG*
 build
 data*/

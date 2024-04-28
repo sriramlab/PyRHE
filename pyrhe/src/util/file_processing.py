@@ -23,7 +23,7 @@ def read_bim(filename):
 
 def read_fam(filename):
     try:
-        df = pd.read_csv(filename, delim_whitespace=True, header=None)
+        df = pd.read_csv(filename, sep='\s+', header=None)
         num_individuals = df.shape[0]
         return num_individuals, df
     except FileNotFoundError:
@@ -116,7 +116,7 @@ def generate_annot(filename, num_snp, num_bin):
 
 def read_cov(filename, std: bool=False, missing_indvs=None, cov_impute_method="ignore"):
     try: 
-        df = pd.read_csv(filename, delim_whitespace=True)
+        df = pd.read_csv(filename, sep='\s+')
         
         if missing_indvs is None:
             missing_indvs = []

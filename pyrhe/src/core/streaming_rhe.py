@@ -5,7 +5,6 @@ from pyrhe.src.core.rhe import RHE
 from typing import List, Tuple
 import numpy as np
 import multiprocessing
-from multiprocessing import shared_memory
 from pyrhe.src.core.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.types import *
 from pyrhe.src.util.logger import Logger

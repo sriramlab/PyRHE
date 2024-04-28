@@ -37,8 +37,8 @@ streaming: Whether to use the streaming version or not
 num_workers: The number of workers
 seed (-s): The random seed
 device: Device to use (cpu or gpu)
-      Using CPU already enables great performance,. You can further improve performance using GPU
-cuda_num: CUDA number of GPU us used
+      Using CPU already enables great performance. You can further improve performance using GPU
+cuda_num: CUDA number of GPU
 geno_impute_method: How to impute missing genotype ("binary" (binary imputation) or "mean" (mean imputation))
 cov_impute_method: How to impute missing covariate ("ignore" (ignore individuals with missing covariate) or "mean" (mean imputation))
 samp_prev: Sample prevalence of binary phenotype (for conversion to liability scale)

@@ -53,6 +53,9 @@ class RHE:
 
         ## Config
         self.log = log
+        if self.log is None:
+            self.log = Logger(debug_mode=False)
+
         self.log._debug(f"Using device {device}")
         self.multiprocessing = multiprocessing
 
@@ -116,29 +119,31 @@ class RHE:
             self.cov_matrix = None
             self.Q = None
             self.missing_indv = missing_indv
-            self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
+            if self.pheno is not None:
+                self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
         else:
             self.use_cov = True
             self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv, cov_impute_method=cov_impute_method)
-            self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
+            if self.pheno is not None:
+                self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
-    
-        self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
+        if self.pheno is not None:
+            self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
         
         self.num_indv = self.num_indv_original - len(self.missing_indv)
         for idx, missing_idx in enumerate(self.missing_indv, start=1):
             col0_value = fam_df.iloc[missing_idx, 0]
             col1_value = fam_df.iloc[missing_idx, 1]
-            log._log(f"missing individual {idx}: FID:{col0_value} IID:{col1_value}")
+            self.log._log(f"missing individual {idx}: FID:{col0_value} IID:{col1_value}")
         
-        log._log(f"Number of individuals after filtering: {self.num_indv}")
+        self.log._log(f"Number of individuals after filtering: {self.num_indv}")
         if self.cov_matrix is not None:
             self.log._log(f"Number of covariates: {self.cov_matrix.shape[1]}")
         
-        log._log("*****")
+        self.log._log("*****")
         for i, num_snps in enumerate(self.len_bin):
-            log._log(f"Number of features in bin {i} : {num_snps}")
+            self.log._log(f"Number of features in bin {i} : {num_snps}")
 
         # track subsample size
         if not self.multiprocessing:
@@ -223,6 +228,10 @@ class RHE:
             # Assume fixed gamma
             y += self.cov_matrix @ np.ones((Ncov, 1))
             # y += self.cov_matrix @ np.full((Ncov, 1), 0.1)
+
+        self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
+        self.pheno = self.pheno - np.mean(self.pheno)
+        self.binary_pheno = False
 
         return y, betas
 

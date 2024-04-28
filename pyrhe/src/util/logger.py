@@ -1,7 +1,7 @@
 # Adapted from https://github.com/sriramlab/SUMRHE/blob/main/src/logger.py
 
 class Logger:
-    def __init__(self, output_file, suppress=False, debug_mode=True):
+    def __init__(self, output_file=None, suppress=False, debug_mode=True):
         self.msgs = []
         self.output_file = output_file
         self.suppress = suppress
@@ -17,6 +17,8 @@ class Logger:
             print(msg)
 
     def _save_log(self):
-        with open(self.output_file, 'w') as fd:
-            for msg in self.msgs:
-                fd.write(msg)
+        if self.output_file is not None:
+            with open(self.output_file, 'w') as fd:
+                for msg in self.msgs:
+                    fd.write(msg)
+        
