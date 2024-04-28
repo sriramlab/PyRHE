@@ -14,6 +14,7 @@ from multiprocessing import shared_memory, Manager
 from pyrhe.src.core.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.mat_mul import *
 from pyrhe.src.util.types import *
+from pyrhe.src.util.logger import Logger
 
 
 
@@ -37,6 +38,9 @@ class RHE:
         seed: Optional[int] = None,
         get_trace: bool = False,
         trace_dir: Optional[str] = None,
+        samp_prev: Optional[float] = None,
+        pop_prev: Optional[float] = None,
+        log: Optional[Logger] = None
     ):
 
         self.num_jack = num_jack
@@ -45,14 +49,17 @@ class RHE:
         self.verbose = verbose
         self.num_bin = num_bin if annot_file is None else None
         self.geno_impute_methods = geno_impute_method
-
+    
 
         ## Config
-        print(f"Using device {device}")
+        self.log = log
+        self.log._debug(f"Using device {device}")
         self.multiprocessing = multiprocessing
+
         # atexit
         if self.multiprocessing:
             atexit.register(self._finalize)
+
         # Seed
         self.seed = int(time.process_time()) if seed is None else seed
         np.random.seed(self.seed)
@@ -71,11 +78,11 @@ class RHE:
                 raise ValueError(f"The device only have {total_workers} cores but tried to specify {num_workers} workers")
             else:
                 if num_workers > total_workers // 10:
-                    print(f"The device only have {total_workers} cores but tried to specify {num_workers} workers, recommend to decrease the worker count to avoid memory issues.")
+                    self.log._debug(f"The device only have {total_workers} cores but tried to specify {num_workers} workers, recommend to decrease the worker count to avoid memory issues.")
                 self.num_workers = num_workers
         else:
             self.num_workers = total_workers // 10
-        print(f"Number of workers: {self.num_workers}")
+        self.log._debug(f"Number of workers: {self.num_workers}")
 
 
         # read fam and bim file
@@ -98,8 +105,7 @@ class RHE:
         # read pheno file and center
         self.pheno_file = pheno_file
         if pheno_file is not None:
-            self.pheno, missing_indv = read_pheno(pheno_file)
-            # self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
+            self.pheno, missing_indv, self.binary_pheno = read_pheno(pheno_file)
         else:
             self.pheno = None
             missing_indv = []
@@ -116,14 +122,23 @@ class RHE:
             self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv, cov_impute_method=cov_impute_method)
             self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
-        
+
+    
         self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
         
         self.num_indv = self.num_indv_original - len(self.missing_indv)
         for idx, missing_idx in enumerate(self.missing_indv, start=1):
             col0_value = fam_df.iloc[missing_idx, 0]
             col1_value = fam_df.iloc[missing_idx, 1]
-            print(f"missing individual {idx}: FID:{col0_value} IID:{col1_value}")
+            log._log(f"missing individual {idx}: FID:{col0_value} IID:{col1_value}")
+        
+        log._log(f"Number of individuals after filtering: {self.num_indv}")
+        if self.cov_matrix is not None:
+            self.log._log(f"Number of covariates: {self.cov_matrix.shape[1]}")
+        
+        log._log("*****")
+        for i, num_snps in enumerate(self.len_bin):
+            log._log(f"Number of features in bin {i} : {num_snps}")
 
         # track subsample size
         if not self.multiprocessing:
@@ -141,12 +156,15 @@ class RHE:
         if self.get_trace:
             if self.num_bin > 1:
                 raise ValueError("Save trace failed, only supports saving tracing for single bin case.")
+        
+        # liability scale
+        self.samp_prev = samp_prev
+        self.pop_prev = pop_prev
     
-
     def _init_device(self, device, cuda_num):
         if device != "cpu":
             if not torch.cuda.is_available():
-                print("cuda not available, fall back to cpu")
+                self.log._debug("cuda not available, fall back to cpu")
                 self.device = torch.device("cpu")
             else:
                 if cuda_num is not None and cuda_num > -1:
@@ -174,7 +192,7 @@ class RHE:
                 sigma_epsilon=1 - sigma # environmental effect sizes
                 betas = np.random.randn(self.num_snp,1)*np.sqrt(sigma) # additive SNP effect sizes
                 y += X@betas/np.sqrt(M)
-                #print(f'sigma_epislon={sigma_epsilon}')
+                #self.log._debug(f'sigma_epislon={sigma_epsilon}')
                 y += np.random.randn(self.num_snp,1)*np.sqrt(sigma_epsilon) # add the effect sizes
 
         else:
@@ -310,7 +328,7 @@ class RHE:
         start_time = time.time()
         subsample = self.read_geno(start, end)
         end_time = time.time()
-        # print(f"read geno time: {end_time - start_time}")
+        # self.log._debug(f"read geno time: {end_time - start_time}")
 
         sub_annot = self.annot_matrix[start:end]
 
@@ -387,7 +405,7 @@ class RHE:
                 self._init_device(self.device_name, self.cuda_num)
             
             for j in range(start_j, end_j):
-                print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
+                self.log._debug(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
                 np.random.seed(self.seed)
                 start_whole = time.time()
 
@@ -399,14 +417,12 @@ class RHE:
                 assert subsample.shape[0] == self.num_indv
 
                 end = time.time()
-                # print(f"impute time: {end - start}")
+                # self.log._debug(f"impute time: {end - start}")
                 all_gen = self.partition_bins(subsample, sub_annot)
 
 
                 for k, X_kj in enumerate(all_gen): 
-                    print(X_kj)
                     self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
-                    print(f"j = {j}, k = {k}, M = {self.M[j][k]}")
                     for b in range(self.num_random_vec):
                         self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
                         if self.use_cov:
@@ -415,9 +431,9 @@ class RHE:
                     self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
 
                 end_whole = time.time()
-                print(f"jackknife {j} precompute total time: {end_whole - start_whole}")
+                self.log._debug(f"jackknife {j} precompute total time: {end_whole - start_whole}")
         except Exception as e:
-            print(f"Error in worker {worker_num} processing range {start_j}-{end_j}: {e}")
+            self.log._debug(f"Error in worker {worker_num} processing range {start_j}-{end_j}: {e}")
 
 
     def _distribute_work(self, num_jobs, num_workers):
@@ -462,7 +478,7 @@ class RHE:
 
         end_whole = time.time()
 
-        print(f"Precompute total time: {end_whole - start_whole}")
+        self.log._debug(f"Precompute total time: {end_whole - start_whole}")
 
         if not isinstance(self, StreamingRHE): 
             for k in range(self.num_bin):
@@ -530,7 +546,7 @@ class RHE:
             trace_dict = {}
 
         for j in range(self.num_jack + 1):
-            print(f"Estimate for jackknife sample {j}")
+            self.log._debug(f"Estimate for jackknife sample {j}")
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
             q = np.zeros((self.num_bin+1, 1))
@@ -777,58 +793,90 @@ class RHE:
         with open(mn_filepath, 'w') as file:
             file.write(mn_content)
 
-        print(f"Trace saved to {trace_filepath}")
-        print(f"MN data saved to {mn_filepath}")        
+        self.log._debug(f"Trace saved to {trace_filepath}")
+        self.log._debug(f"MN data saved to {mn_filepath}")   
+
+    def _compute_liability_h2(self, h2, seh2): 
+        # https://gist.github.com/nievergeltlab/fb8a20feded72030907a9b4e81d1c6ea 
+        from scipy.stats import norm, chi2
+        K = self.pop_prev
+        P = self.samp_prev
+        zv = norm.pdf(norm.ppf(K))
+
+        h2_liab = h2 * K**2 * (1 - K)**2 / P / (1 - P) / zv**2
+        var_h2_liab = (seh2 * K**2 * (1 - K)**2 / P / (1 - P) / zv**2) ** 2
+        p_liab = chi2.sf(h2_liab**2 / var_h2_liab, 1)
+
+        return h2_liab, var_h2_liab**0.5, p_liab
 
     def __call__(self, method: str = "QR"):
         """
-        whole RHE process for printing etc
+        whole RHE process for self.log._debuging etc
         """
+        self.log._log("*****")
+        self.log._log("OUTPUT: ")
         self.pre_compute()
 
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
         sig_errs = self.estimate_error(sigma_est_jackknife)
 
+        self.log._log("Variance components: ")
         for i, est in enumerate(sigma_ests_total):
             if i == len(sigma_ests_total) - 1:
-                print(f"residual variance: {est}, SE: {sig_errs[i]}")
+                self.log._log(f"Sigma^2_e : {est}  SE : {sig_errs[i]}")
             else:
-                print(f"sigma^2 estimate for bin {i}: {est}, SE: {sig_errs[i]}")
+                self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
         
         h2_jackknife, h2_total = self.compute_h2_nonoverlapping(sigma_est_jackknife, sigma_ests_total)
         h2_errs = self.estimate_error(h2_jackknife)
 
-        print("Nonoverlapping h2...")
+        self.log._log("*****")
+        self.log._log("Heritabilities:")
         for i, est_h2 in enumerate(h2_total):
             if i == len(h2_total) - 1:
-                print(f"total h^2 : {est_h2}, SE: {h2_errs[i]}")
+                self.log._log(f"Total h2 : {est_h2} SE: {h2_errs[i]}")
             else:
-                print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs[i]}")
+                self.log._log(f"h2_g[{i}] : {est_h2} : {h2_errs[i]}")
 
+        self.log._log("*****")
+        self.log._log("Enrichments: ")
 
         enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
         enrichment_errs = self.estimate_error(enrichment_jackknife)
 
         for i, est_enrichment in enumerate(enrichment_total):
-            print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs[i]}")
+            self.log._log(f"Enrichment g[{i}] : {est_enrichment} SE : {enrichment_errs[i]}")
 
-        
+        self.log._log("*****\n*****\nHeritabilities and enrichments computed based on overlapping setting")
+
         h2_jackknife_overlap, h2_total_overlap = self.compute_h2_overlapping(sigma_est_jackknife, sigma_ests_total)
         h2_errs_overlap = self.estimate_error(h2_jackknife_overlap)
 
-        print("Overlapping h2...")
+        self.log._log("Heritabilities:")
         for i, est_h2 in enumerate(h2_total_overlap):
-            if i == len(h2_total_overlap) - 1:
-                print(f"total h^2 : {est_h2}, SE: {h2_errs_overlap[i]}")
+            if i == len(h2_total) - 1:
+                self.log._log(f"Total h2 : {est_h2} SE: {h2_errs_overlap[i]}")
             else:
-                print(f"h^2 for bin {i}: {est_h2}, SE: {h2_errs_overlap[i]}")
+                self.log._log(f"h2_g[{i}] : {est_h2} : {h2_errs_overlap[i]}")
         
-
+        self.log._log("Enrichments (overlapping def):")
         enrichment_jackknife_overlap, enrichment_total_overlap = self.compute_enrichment(h2_jackknife_overlap, h2_total_overlap)
         enrichment_errs_overlap = self.estimate_error(enrichment_jackknife_overlap)
 
         for i, est_enrichment in enumerate(enrichment_total_overlap):
-            print(f"enrichment for bin {i}: {est_enrichment}, SE: {enrichment_errs_overlap[i]}")
+            self.log._log(f"Enrichment g[{i}] : {est_enrichment} SE : {enrichment_errs_overlap[i]}")
+
+
+        if self.binary_pheno:
+            self.log._log("*****")
+            self.log._log("Liability Scale h2 for binary phenotype:")
+            for i, est_h2 in enumerate(h2_total):
+                if i == len(h2_total) - 1:
+                    output = self.calculate_liability_h2(h2_total, h2_errs)
+                    self.log._log(f"Total Liability-scale h2 : {output[0]}, SE: {output[1]}, p-value: {output[2]}")
+                else:
+                    output = self.calculate_liability_h2(est_h2, h2_errs[i])
+                    self.log._log(f"Liability-scale h2_g[{i}] : {output[0]}, SE: {output[1]}, p-value: {output[2]}")
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, h2_total_overlap, h2_errs_overlap, enrichment_total_overlap, enrichment_errs_overlap
     
@@ -924,7 +972,7 @@ class RHE:
                 jackknife_results[j] = np.row_stack(temp)
 
         trace_est = np.square(results).sum()/(self.num_random_vec*self.num_snp*self.num_snp)
-        print(f"The trace estimate is {trace_est}")
+        self.log._debug(f"The trace estimate is {trace_est}")
 
         if jackknife_blocks:
             for j in range(self.num_blocks):
@@ -932,7 +980,7 @@ class RHE:
                 M_snps = np.shape(jackknife_result)[0]
                 jackknife_trace_est = np.square(jackknife_result).sum()/(self.num_random_vec*M_snps*M_snps)
                 
-                print(f"The trace estimate of {j}-th jackknife block is {jackknife_trace_est}")
+                self.log._debug(f"The trace estimate of {j}-th jackknife block is {jackknife_trace_est}")
 
         with open(f"{output}.txt.bin", 'wb') as f:
             results.tofile(f)

@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='pyrhe',  
-    version='0.1.0',  
+    version='1.0.0',  
     author="Jiayi Ni",
     author_email='nijiayi1119626@g.ucla.edu',
     description='A Python package for Randomized Haseman-Elston regression for Multi-variance Components.',

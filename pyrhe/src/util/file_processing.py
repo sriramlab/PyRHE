@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 
+
 def read_bim(filename):
     try:
         with open(filename, 'r') as inp:
@@ -64,11 +65,6 @@ def read_annot(filename, Njack):
 
     Nsnp = linenum + 1
 
-    print("Number of SNPs per block:", Nsnp // Njack)
-
-    for i, num_snps in enumerate(len_bin):
-        print(num_snps, "SNPs in", i, "-th bin")
-        
     return Nbin, annot_bool, len_bin
 
 
@@ -82,6 +78,9 @@ def read_pheno(filename):
         y = [] 
         missing_indv = []
 
+        all_binary = True
+        valid_values = {'0', '1', '2'} 
+
         for i, line in enumerate(lines):
             columns = line.strip().split()
             if columns[2] == "NA" or float(columns[2]) == -9:
@@ -89,9 +88,11 @@ def read_pheno(filename):
                 missing_indv.append(i)
             else:
                 y.append(float(columns[2]))
+                if float(columns[2]) not in valid_values:
+                    all_binary = False
         
         y = np.array(y).reshape(-1, 1)
-        return y, missing_indv
+        return y, missing_indv, all_binary
     
     except FileNotFoundError:
         raise FileNotFoundError("Error: The pheno file could not be found.")
@@ -144,6 +145,7 @@ def read_cov(filename, std: bool=False, missing_indvs=None, cov_impute_method="i
 
         if std:
             df = (df - df.mean()) / df.std(ddof=1)
+            
 
         return df.values, all_missing_indvs
 

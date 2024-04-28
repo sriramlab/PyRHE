@@ -1,11 +1,13 @@
 [PyRHE_Config]
-geno = test
-pheno = test.pheno
-annot=single.annot
+genotype = test
+phenotype = test.pheno
+annotation=single.annot
+covariate=test.cov
 num_vec = 10
 num_bin = 1
 num_block = 100
 streaming = no
+debug = yes
 output = test.out
 get_trace = no
 benchmark_runtime = no
@@ -14,10 +16,12 @@ cov_impute_method = ignore
 
 
 
+
 [Original_RHE_Config]
-geno = test
-pheno = test.pheno
-annot = single.annot
+genotype = test
+phenotype = test.pheno
+covariate=test.cov
+annotation=single.annot
 num_vec = 10
 num_bin = 1
 num_block = 100

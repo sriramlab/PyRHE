@@ -8,8 +8,7 @@ import multiprocessing
 from multiprocessing import shared_memory
 from pyrhe.src.core.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.types import *
-
-
+from pyrhe.src.util.logger import Logger
 
 
 class StreamingRHE(RHE):
@@ -32,6 +31,9 @@ class StreamingRHE(RHE):
         seed: Optional[int] = None,
         get_trace: bool = False,
         trace_dir: Optional[str] = None,
+        samp_prev: Optional[float] = None,
+        pop_prev: Optional[float] = None,
+        log: Optional[Logger] = None
     ):
         super().__init__(
             geno_file=geno_file,
@@ -50,7 +52,9 @@ class StreamingRHE(RHE):
             verbose=verbose,
             seed=seed,
             get_trace=get_trace,
-            trace_dir=trace_dir
+            trace_dir=trace_dir,
+            samp_prev=samp_prev,
+            pop_prev=pop_prev
         )
     
     def _aggregate(self):
@@ -74,7 +78,7 @@ class StreamingRHE(RHE):
         for j in range(start_j, end_j):
             if not self.multiprocessing:
                 worker_num = 0
-            print(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
+            self.log._debug(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
             start_whole = time.time()
             subsample, sub_annot = self._get_jacknife_subsample(j)
             subsample = self.impute_geno(subsample, simulate_geno=True)
@@ -85,7 +89,7 @@ class StreamingRHE(RHE):
             all_gen = self.partition_bins(subsample, sub_annot)
 
             for k, X_kj in enumerate(all_gen):
-                print(X_kj.shape)
+                self.log._debug(X_kj.shape)
 
                 self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
@@ -115,13 +119,13 @@ class StreamingRHE(RHE):
                 del X_kj
 
             end_whole = time.time()
-            print(f"jackknife {j} precompute (pass 1) total time: {end_whole-start_whole}")
+            self.log._debug(f"jackknife {j} precompute (pass 1) total time: {end_whole-start_whole}")
 
 
     def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue, trace_dict):
         sigma_ests = []
         for j in range(start_j, end_j):
-            print(f"Precompute (pass 2) for jackknife sample {j}")
+            self.log._debug(f"Precompute (pass 2) for jackknife sample {j}")
             start_whole = time.time()
             if j != self.num_jack:
                 subsample, sub_annot = self._get_jacknife_subsample(j)
@@ -144,7 +148,7 @@ class StreamingRHE(RHE):
                 self.yXXy_per_jack[k][1] = self.yXXy_per_jack[k][0] - yXXy_k
 
 
-            print(f"Estimate for jackknife sample {j}")
+            self.log._debug(f"Estimate for jackknife sample {j}")
             T = np.zeros((self.num_bin+1, self.num_bin+1))
             q = np.zeros((self.num_bin+1, 1))
 
@@ -211,7 +215,7 @@ class StreamingRHE(RHE):
                 raise ValueError("Unsupported method for solving linear equation")
 
             end_whole = time.time()
-            print(f"estimate time for jackknife subsample: {end_whole - start_whole}")
+            self.log._debug(f"estimate time for jackknife subsample: {end_whole - start_whole}")
 
         if self.multiprocessing:
             result_queue.put((worker_num, sigma_ests)) # ensure in order
