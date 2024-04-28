@@ -7,7 +7,7 @@ from constant import RESULT_DIR, DATA_DIR
 from run_rhe import parse_config, convert_to_correct_type
 
 def main(args):
-    annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}" if args.annot is None else args.annot
+    annot_path = f"{DATA_DIR}/annot/annot_{args.num_bin}" if args.annotation is None else args.annotation
     rhe_path = "/u/home/j/jiayini/project-sriram/RHE-mc/build/RHEmc_mem" if args.streaming else "/u/home/j/jiayini/project-sriram/RHE-mc/build/RHEmc"  
 
     output_dir = f"{RESULT_DIR}/original_result/{'cov' if args.covariate else 'no_cov'}/bin_{args.num_bin}"
@@ -17,14 +17,14 @@ def main(args):
     output_file = f"{output_dir}/{args.output}.txt"
     assert os.access(rhe_path, os.X_OK), f"{rhe_path} is not executable"
 
-    pheno_file = args.pheno
+    pheno_file = args.phenotype
 
     print(f"processing {pheno_file}")
     start_time = time.time() 
 
     cmd = [
         rhe_path,
-        "-g", args.geno,
+        "-g", args.genotype,
         "-p", pheno_file,
         "-annot", annot_path,
         "-k", str(args.num_vec),
@@ -59,10 +59,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Original_RHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--benchmark_runtime', action='store_true', help='benchmark the runtime')
-    parser.add_argument('--geno', '-g', type=str, help='genotype file path')
-    parser.add_argument('--pheno', '-p', type=str, help='phenotype file path')
+    parser.add_argument('--genotype', '-g', type=str, help='genotype file path')
+    parser.add_argument('--phenotype', '-p', type=str, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
-    parser.add_argument('--annot',  type=str, default=None, help='Annotation file path')
+    parser.add_argument('--annotation',  type=str, default=None, help='Annotation file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors.')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks.')
@@ -83,8 +83,8 @@ if __name__ == '__main__':
         for i in range(3):
             args = parser.parse_args()
             cov = "_with_cov" if args.covariate else ""
-            base_pheno_path = f"{args.pheno}/pheno{cov}/bin_{args.num_bin}"
-            args.pheno = os.path.join(base_pheno_path, f"{i}.phen")  
+            base_pheno_path = f"{args.phenotype}/pheno{cov}/bin_{args.num_bin}"
+            args.phenotype = os.path.join(base_pheno_path, f"{i}.phen")  
             runtime = main(args)
             runtimes.append(runtime)
         
