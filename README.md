@@ -1,6 +1,6 @@
 # PyRHE
 
-PyRHE is an efficient and portable Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It uses `PyTorch` to convert large matrix into tensors to accelerate large matrix multiplication and incorporates multiprocessing to process Jackknife blocks in parallel. It is designed to run on both CPU and CUDA-enabled GPU, and is easy to install and integrate into other applications.
+PyRHE is an efficient and portable Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It converts large matrix into tensors to accelerate large matrix multiplication and incorporates multiprocessing to process Jackknife blocks in parallel. It is designed to run on both CPU and CUDA-enabled GPU, and is easy to install and integrate into other applications.
 
 # Installation 
 
@@ -12,10 +12,41 @@ pip install pyrhe/
 
 
 # Example Usage
+
+Run PyRHE as follows:
 ```
-python run_rhe.py -g {geno_path} --p {pheno_path} -c {covariate_path} --annot {annot_path}-b {num_bin} -k {num_vec} -jn {num_block} --device {device} --cuda_num {cuda_num} --output {output_file} (--streaming)
+python run_rhe.py <command_line arguments>
 ```
-Or you can incorporate RHE in your own project using:
+Alternatively, you may run PyRHE using a newline-separated config file:
+```
+python run_rhe.py --config <config file>
+```
+See the [example](https://github.com/sriramlab/PyRHE/tree/main/example) folder for an example usage.
+
+# Parameters
+```
+genotype (-g): The path of PLINK BED genotype file
+phenotype (-p): The path of phenotype file
+covariate (-c): The path of covariate file
+annotation (-annot): The path of genotype annotation file.
+num_vec (-k): The number of random vectors (10 is recommended). 
+num_block (-jn): The number of jackknife blocks (100 is recommended). 
+    The higher the number of jackknife blocks, the higher the memory usage.
+output (-o): The path of the output file prefix
+streaming: Whether to use the streaming version or not
+num_workers: The number of workers
+seed (-s): The random seed
+device: Device to use (cpu or gpu)
+      Using CPU already enables great performance,. You can further improve performance using GPU
+cuda_num: CUDA number of GPU us used
+geno_impute_method: How to impute missing genotype ("binary" (binary imputation) or "mean" (mean imputation))
+cov_impute_method: How to impute missing covariate ("ignore" (ignore individuals with missing covariate) or "mean" (mean imputation))
+samp_prev: Sample prevalence of binary phenotype (for conversion to liability scale)
+pop_prev: Population prevalence of binary phenotype (for conversion to liability scale)
+trace (-tr): Save the stochastic trace estimates as trace summary statistics (.trace) with metadata (.MN)
+```
+
+PyRHE is easily incorporated in your own project using (TODO: Add a notebook):
 
 ```python
 from pyrhe.src.core import RHE
@@ -39,45 +70,8 @@ rhe = RHE(
 sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs = rhe()
 
 ```
+Replace the `RHE` with `StreamingRHE` in the above to get the memory efficient streaming version of estimation
 
-You can call `rhe()` once to get all the estimation summary. In addition, `rhe()` call is composed of several functions that can be used individually (e.g., error estimation). 
-
-```python
-def __call__(self, method: str = "QR"):
-    # Precompute, should be called before you do any estimation
-    self.pre_compute()
-
-    # Get sigma^2 estimation for each jackknife samples and the whole sample
-    sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
-    # Get standard error for sigma^2 estimation
-    sig_errs = self.estimate_error(sigma_est_jackknife)
-
-    for i, est in enumerate(sigma_ests_total):
-        if i == len(sigma_ests_total) - 1:
-            print(f"residual variance: {est}, SE: {sig_errs[i]}")
-        else:
-            print(f"sigma^2 estimate for bin {i}: {est}, SE: {sig_errs[i]}")
-
-    # Get the heritability estimation for each jackknife samples and the whole sample
-    h2_jackknife, h2_total = self.compute_h2(sigma_est_jackknife, sigma_ests_total)
-    # Get standard error for the heritability estimation
-    h2_errs = self.estimate_error(h2_jackknife)
-
-    # Get the enrichment estimation for each jackknife samples and the whole sample
-    enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
-     # Get standard error for the enrichment estimation
-    enrichment_errs = self.estimate_error(enrichment_jackknife)
-
-    return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs
-
-```
-
-# Other Functionalities 
-- Memory efficient (Streaming) estimation（Replace the `RHE` with `StreamingRHE` in the above to get the streaming version）
-- Simulating phenotype 
-- Getting summary of trace estimate
-- Getting other summary statistics (e.g., XtXz)
-- To be added
 
 # Comparison between PyRHE & Original RHE
 ## Accuracy of Estimation
@@ -91,7 +85,7 @@ def __call__(self, method: str = "QR"):
 <img width="498" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/e3375751-fe0a-4c24-9bf8-84dff9d91634">
 
 # Example testing pipeline:
-The package also supports you to run testing pipelines when some files are missing (e.g., annotation file). In addition, it supports running the [original RHE](https://github.com/sriramlab/RHE-mc) within the package. Here is the example testing pipeline.
+Here is the example testing pipeline. You can run testing pipelines when some files are missing (e.g., annotation file). 
 
 **1. Set Up**
 Create a `.env` file and specify the `RESULT_DIR` (where you store the results) and `DATA_DIR` (store the simulated phenotype, generated annotation file, etc.)
@@ -111,6 +105,7 @@ python simulate_pheno.py -b {num_bin} -c {cov_file_path}
 ```
 
 **4. Run original RHE**  
+Running the [original RHE](https://github.com/sriramlab/RHE-mc) using
 ```
 python run_original.py -g {geno_path} -b {num_bin} -c {cov_file_path} -k {num_vec} -jn {num_block} --output {output_file}
 ```
