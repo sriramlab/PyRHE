@@ -34,7 +34,6 @@ class RHE:
         cuda_num: Optional[int] = None,
         num_workers: Optional[int] = None,
         multiprocessing: bool = True,
-        verbose: bool = True,
         seed: Optional[int] = None,
         get_trace: bool = False,
         trace_dir: Optional[str] = None,
@@ -46,7 +45,6 @@ class RHE:
         self.num_jack = num_jack
         self.num_blocks = num_jack
         self.num_random_vec = num_random_vec
-        self.verbose = verbose
         self.num_bin = num_bin if annot_file is None else None
         self.geno_impute_methods = geno_impute_method
     

@@ -89,7 +89,8 @@ def main(args):
             multiprocessing=args.multiprocessing,
             num_workers=args.num_workers,
             seed=args.seed,
-            trace_dir=args.trace,
+            get_trace=args.trace,
+            trace_dir=args.trace_dir,
             samp_prev=args.samp_prev,
             pop_prev=args.pop_prev,
             log=log,
@@ -112,6 +113,7 @@ def main(args):
             num_workers=args.num_workers,
             seed=args.seed,
             get_trace=args.trace,
+            trace_dir=args.trace_dir,
             samp_prev=args.samp_prev,
             pop_prev=args.pop_prev,
             log=log
@@ -157,6 +159,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyRHE') 
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
     parser.add_argument('--trace', '-tr', action='store_true', help='get the trace estimate')
+    parser.add_argument('--trace_dir', type=str, default="", help='directory to save the trace information')
     parser.add_argument('--benchmark_runtime', action='store_true', help='benchmark the runtime')
 
     parser.add_argument('--genotype', '-g', type=str, help='genotype file path')
@@ -167,7 +170,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')
     parser.add_argument('--num_workers', type=int, default=8, help='Number of workers')
     parser.add_argument('--num_block', '-jn', type=int, default=100, help='The number of jackknife blocks. (100 is recommended). The higher number of jackknife blocks the higher the memory usage.')
-    parser.add_argument('--seed', default=None, help='Random seed')
+    parser.add_argument('--seed', '-s', default=None, help='Random seed')
     parser.add_argument('--device', type=str, default="cpu", help="device to use")
     parser.add_argument('--cuda_num', type=int, default=None, help='cuda number')
     parser.add_argument("--output", '-o', type=str, default="test.out", help='output of the file')
