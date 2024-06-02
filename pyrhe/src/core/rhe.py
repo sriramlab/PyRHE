@@ -396,9 +396,10 @@ class RHE:
 
     def create_shared_memory(self, arrays):
         for name, (shape, dtype) in arrays.items():
-            shm = shared_memory.SharedMemory(create=True, size=np.prod(shape) * np.dtype(dtype).itemsize)
-            setattr(self, name, np.ndarray(shape, dtype=dtype, buffer=shm.buf))
-            setattr(self, f"{name}_shm", shm)
+            shm = shared_memory.SharedMemory(create=True, size=np.prod(shape) * np.dtype(dtype).itemsize) if self.multiprocessing else None
+            setattr(self, name, np.ndarray(shape, dtype=dtype, buffer=shm.buf if self.multiprocessing else None))
+            if self.multiprocessing:
+                setattr(self, f"{name}_shm", shm)
 
     def _setup_shared_memory(self):
         self.shared_memory()
@@ -407,12 +408,10 @@ class RHE:
         for name in self.shared_memory_arrays.keys():
             getattr(self, name).fill(0)
 
-        self.M_shm = shared_memory.SharedMemory(create=True, size= (self.num_jack + 1) * self.num_bin * np.int64().itemsize)
-        self.M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=self.M_shm.buf)
+        self.M_shm = shared_memory.SharedMemory(create=True, size= (self.num_jack + 1) * self.num_bin * np.int64().itemsize) if self.multiprocessing else None
+        self.M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=self.M_shm.buf if self.multiprocessing else None)
         self.M.fill(0)
         self.M[self.num_jack] = self.len_bin
-
-
 
     def pre_compute_jackknife_bin(self, j, k, X_kj):
         self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
@@ -465,8 +464,9 @@ class RHE:
 
         start_whole = time.time()
 
+        self._setup_shared_memory()
+
         if self.multiprocessing:
-            self._setup_shared_memory()
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
 
             processes = []
@@ -479,18 +479,6 @@ class RHE:
                 self._aggregate()
              
         else:
-            if isinstance(self, StreamingRHE):
-                self.XXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64)
-                self.yXXy_per_jack = np.zeros((self.num_bin, 2), dtype=np.float64)
-                self.UXXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
-                self.XXUz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
-
-            else:
-                self.XXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64)
-                self.yXXy = np.zeros((self.num_bin, num_block), dtype=np.float64)
-                self.UXXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
-                self.XXUz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
-
             for j in tqdm(range(self.num_jack), desc="Preprocessing jackknife subsamples..."):
                 self._pre_compute_worker(0, j, j + 1)
 
@@ -523,17 +511,18 @@ class RHE:
                             self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
     def _finalize(self):
-        for name in self.shared_memory_arrays.keys():
-            if hasattr(self, f'{name}_shm'):
-                shm = getattr(self, f'{name}_shm')
-                shm.close()
-                shm.unlink()
-        
-        if hasattr(self, 'M_shm'):
-            self.M_shm.close()
-            self.M_shm.unlink()
+        if self.multiprocessing:
+            for name in self.shared_memory_arrays.keys():
+                if hasattr(self, f'{name}_shm'):
+                    shm = getattr(self, f'{name}_shm')
+                    shm.close()
+                    shm.unlink()
             
-     
+            if hasattr(self, 'M_shm'):
+                self.M_shm.close()
+                self.M_shm.unlink()
+                
+        
     def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         """
         Actual RHE estimation for sigma^2

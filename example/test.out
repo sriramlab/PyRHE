@@ -13,7 +13,7 @@ Active essential options:
 	-o (output) test.out
 	-k (# random vectors) 10
 	-jn (# jackknife blocks) 100
-	--num_workers 8
+	--num_workers 5
 	--device cpu
 	--geno_impute_method binary
 	--cov_impute_method ignore
@@ -27,12 +27,12 @@ Number of features in bin 0 : 10000
 *****
 OUTPUT FOR TRAIT 0: 
 Variance components: 
-Sigma^2_g[0] : 0.16597885017147812  SE : 0.03135423615675069
-Sigma^2_e : 0.7934506952738024  SE : 0.03135247062873438
+Sigma^2_g[0] : 0.1664970406704861  SE : 0.031511403311611966
+Sigma^2_e : 0.7928899961854858  SE : 0.03151946702368144
 *****
 Heritabilities:
-h2_g[0] : 0.17299743473549767 : 0.03267976670189794
-Total h2 : 0.17299743473549767 SE: 0.03267976670189794
+h2_g[0] : 0.17354522656061433 : 0.03284676090574072
+Total h2 : 0.17354522656061433 SE: 0.03284676090574072
 *****
 Enrichments: 
 Enrichment g[0] : 1.0 SE : 0.0
@@ -40,7 +40,7 @@ Enrichment g[0] : 1.0 SE : 0.0
 *****
 Heritabilities and enrichments computed based on overlapping setting
 Heritabilities:
-h2_g[0] : 0.17299743473551485 : 0.03267976670189945
-Total h2 : 0.17299743473549767 SE: 0.03267976670189794
+h2_g[0] : 0.17354522656064666 : 0.03284676090575647
+Total h2 : 0.17354522656061433 SE: 0.03284676090574072
 Enrichments (overlapping def):
-Enrichment g[0] : 1.0000000000000993 SE : 1.2342641097701131e-12
+Enrichment g[0] : 1.0000000000001863 SE : 1.212006622886039e-12

@@ -31,6 +31,11 @@ class StreamingRHE(RHE):
                 if self.XXUz_per_jack is not None:
                     self.XXUz_per_jack[k, 0, b, :] = np.sum(self.XXUz[k, 0, b, :], axis=0)
         
+        self.XXz = self.XXz_per_jack
+        self.yXXy = self.yXXy_per_jack 
+        self.UXXz = self.UXXz_per_jack
+        self.XXUz = self.XXUz_per_jack
+
     def shared_memory(self):
         self.shared_memory_arrays = {
             "XXz": ((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
@@ -60,27 +65,17 @@ class StreamingRHE(RHE):
                 self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     XXz_kjb = self._compute_XXz(b, X_kj)
-                    if self.multiprocessing:
-                        self.XXz[k][worker_num][b] += XXz_kjb
-                    else:
-                        self.XXz_per_jack[k][worker_num][b] += XXz_kjb
-
+                    self.XXz[k][worker_num][b] += XXz_kjb
+        
                     if self.use_cov:
                         UXXz_kjb = self._compute_UXXz(XXz_kjb)
                         XXUz_kjb = self._compute_XXUz(b, X_kj)
-                        if self.multiprocessing:
-                            self.UXXz[k][worker_num][b] += UXXz_kjb
-                            self.XXUz[k][worker_num][b] += XXUz_kjb
-                        else:
-                            self.UXXz_per_jack[k][worker_num][b] += UXXz_kjb
-                            self.XXUz_per_jack[k][worker_num][b] += XXUz_kjb
-                
-            
+                        self.UXXz[k][worker_num][b] += UXXz_kjb
+                        self.XXUz[k][worker_num][b] += XXUz_kjb
+                      
                 yXXy_kj = self._compute_yXXy(X_kj, y=self.pheno)
-                if self.multiprocessing:
-                    self.yXXy[k][worker_num] += yXXy_kj[0][0]
-                else:
-                    self.yXXy_per_jack[k][worker_num] += yXXy_kj[0][0]
+                self.yXXy[k][worker_num] += yXXy_kj[0][0]
+            
 
                 del X_kj
 
@@ -105,13 +100,13 @@ class StreamingRHE(RHE):
                     XXz_kb = self._compute_XXz(b, X_k) if j != self.num_jack else 0
                     if self.use_cov:
                         UXXz_kb = self._compute_UXXz(XXz_kb) if j != self.num_jack else 0
-                        self.UXXz_per_jack[k][1][b] = self.UXXz_per_jack[k][0][b] - UXXz_kb
+                        self.UXXz[k][1][b] = self.UXXz[k][0][b] - UXXz_kb
                         XXUz_kb = self._compute_XXUz(b, X_k) if j != self.num_jack else 0
-                        self.XXUz_per_jack[k][1][b] = self.XXUz_per_jack[k][0][b] - XXUz_kb
-                    self.XXz_per_jack[k][1][b] = self.XXz_per_jack[k][0][b] - XXz_kb
+                        self.XXUz[k][1][b] = self.XXUz[k][0][b] - XXUz_kb
+                    self.XXz[k][1][b] = self.XXz[k][0][b] - XXz_kb
                 
                 yXXy_k = (self._compute_yXXy(X_k, y=self.pheno))[0][0] if j != self.num_jack else 0
-                self.yXXy_per_jack[k][1] = self.yXXy_per_jack[k][0] - yXXy_k
+                self.yXXy[k][1] = self.yXXy[k][0] - yXXy_k
 
 
             self.log._debug(f"Estimate for jackknife sample {j}")
@@ -122,8 +117,8 @@ class StreamingRHE(RHE):
                 for k_l in range(self.num_bin): 
                     M_k = self.M[j][k_k]
                     M_l = self.M[j][k_l]
-                    B1 = self.XXz_per_jack[k_k][1]
-                    B2 = self.XXz_per_jack[k_l][1]
+                    B1 = self.XXz[k_k][1]
+                    B2 = self.XXz[k_l][1]
                     T[k_k, k_l] += np.sum(B1 * B2)
 
                     if self.use_cov:
@@ -132,8 +127,8 @@ class StreamingRHE(RHE):
                         h3 = self.cov_matrix @ h2
                         trkij_res1 = np.sum(h3.T * B2)
 
-                        B1 = self.XXUz_per_jack[k_k][1]
-                        B2 = self.UXXz_per_jack[k_l][1]
+                        B1 = self.XXUz[k_k][1]
+                        B2 = self.UXXz[k_l][1]
                         trkij_res2 = np.sum(B1 * B2)
                     
                         T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
@@ -151,7 +146,7 @@ class StreamingRHE(RHE):
                     T[self.num_bin, k] = self.num_indv
 
                 else:
-                    B1 = self.XXz_per_jack[k][1]
+                    B1 = self.XXz[k][1]
                     C1 = self.all_Uzb
                     tk_res = np.sum(B1 * C1.T)
                     tk_res = 1/(self.num_random_vec * M_k) * tk_res
@@ -159,7 +154,7 @@ class StreamingRHE(RHE):
                     T[k, self.num_bin] = self.num_indv - tk_res
                     T[self.num_bin, k] = self.num_indv - tk_res
 
-                q[k] = self.yXXy_per_jack[k][1] / M_k if M_k != 0 else 0
+                q[k] = self.yXXy[k][1] / M_k if M_k != 0 else 0
     
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
 
