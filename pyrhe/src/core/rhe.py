@@ -166,6 +166,8 @@ class RHE:
         # liability scale
         self.samp_prev = samp_prev
         self.pop_prev = pop_prev
+
+        self.pheno_cp = self.pheno.copy()
     
     def _init_device(self, device, cuda_num):
         if device != "cpu":
@@ -378,24 +380,17 @@ class RHE:
         return mat_mul(X_kj, mat_mul(X_kj.T, random_vec_cov, device=self.device), device=self.device).flatten()  
 
     def _compute_yXXy(self, X_kj, y):
-        yXXy_results = np.zeros((self.num_traits,))
-
-        for i in range(self.num_traits):
-            pheno = y[:, i:i+1] 
-            if self.use_cov:
-                pheno = self.regress_pheno(self.cov_matrix, pheno)
-            v = mat_mul(X_kj.T, pheno, device=self.device)
-            yXXy_results[i] = mat_mul(v.T, v, device=self.device).item()  # Get the scalar value
-
-        return yXXy_results
+        pheno = y if not self.use_cov else self.regress_pheno(self.cov_matrix, y)
+        v = mat_mul(X_kj.T, pheno, device=self.device)
+        return mat_mul(v.T, v, device=self.device)
 
     def _setup_shared_memory(self, num_blocks):
         self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
         self.XXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
         self.XXz.fill(0)
 
-        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * self.num_traits * np.float64().itemsize)
-        self.yXXy = np.ndarray((self.num_bin, num_blocks, self.num_traits), dtype=np.float64, buffer=self.yXXy_shm.buf)
+        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * np.float64().itemsize)
+        self.yXXy = np.ndarray((self.num_bin, num_blocks), dtype=np.float64, buffer=self.yXXy_shm.buf)
         self.yXXy.fill(0)
 
         if self.use_cov:
@@ -445,10 +440,7 @@ class RHE:
                         if self.use_cov:
                             self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
                             self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-                    yXXy_results = self._compute_yXXy(X_kj, self.pheno)
-                    print(yXXy_results.shape)
-
-                    self.yXXy[k, j, :] = yXXy_results
+                    self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
 
                 end_whole = time.time()
                 self.log._debug(f"jackknife {j} precompute total time: {end_whole - start_whole}")
@@ -489,7 +481,7 @@ class RHE:
 
             else:
                 self.XXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64)
-                self.yXXy = np.zeros((self.num_bin, num_block, self.num_traits), dtype=np.float64)
+                self.yXXy = np.zeros((self.num_bin, num_block), dtype=np.float64)
                 self.UXXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
                 self.XXUz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
 
@@ -505,12 +497,12 @@ class RHE:
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
                         self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
-                    self.yXXy[k, self.num_jack, :] += self.yXXy[k, j, :]
+                    self.yXXy[k][self.num_jack] += self.yXXy[k][j]
                 
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
                         self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
-                    self.yXXy[k, j, :] = self.yXXy[k, self.num_jack, :] - self.yXXy[k, j, :]
+                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
             
             if self.use_cov:
                 for k in range(self.num_bin):
@@ -523,7 +515,6 @@ class RHE:
                         for b in range (self.num_random_vec):
                             self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
                             self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
-    
 
     def _finalize(self):
         if hasattr(self, 'XXz_shm'):
@@ -562,9 +553,7 @@ class RHE:
             sigma^2 for the whole genotype matrix [sigma_1^2 sigma_2^2 ... sigma_e^2]
 
         """
-        sigma_est_jackknife = [[] for _ in range(self.num_traits)]  # A list for each trait
-        sigma_ests_total = [[] for _ in range(self.num_traits)]
-
+        sigma_ests = []
         if self.get_trace:
             trace_dict = {}
 
@@ -572,7 +561,7 @@ class RHE:
             self.log._debug(f"Estimate for jackknife sample {j}")
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
-            q = np.zeros((self.num_bin+1, self.num_traits))
+            q = np.zeros((self.num_bin+1, 1))
 
             for k_k in range(self.num_bin):
                 for k_l in range(self.num_bin):
@@ -614,9 +603,8 @@ class RHE:
 
                     T[k, self.num_bin] = self.num_indv - tk_res
                     T[self.num_bin, k] = self.num_indv - tk_res
-                
-                # print(self.yXXy[k][j])
-                q[k, :] = np.where(M_k != 0, self.yXXy[k][j] / M_k, 0)
+
+                q[k] = self.yXXy[(k, j)] / M_k if M_k != 0 else 0
             
             
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
@@ -625,22 +613,23 @@ class RHE:
                 trace_dict[j] = ((T[0][0], self.M[j]))
 
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
-            q[self.num_bin, :] = np.diag(pheno.T @ pheno) 
+            q[self.num_bin] = pheno.T @ pheno 
 
-            for t in range(self.num_traits):
-                if method == "lstsq":
-                    sigma_est = self.solve_linear_equation(T, q[:, t:t+1])
-                elif method == "QR":
-                    sigma_est = self.solve_linear_qr(T, q[:, t:t+1])
-                else:
-                    raise ValueError("Unsupported method for solving linear equation")
-
+            if method == "lstsq":
+                sigma_est = self.solve_linear_equation(T,q)
                 sigma_est = np.ravel(sigma_est).tolist()
-                if j == self.num_jack:
-                    sigma_ests_total[t].append(sigma_est)
-                else:
-                    sigma_est_jackknife[t].append(sigma_est)
+                sigma_ests.append(sigma_est)
+            elif method == "QR":
+                sigma_est = self.solve_linear_qr(T,q)
+                sigma_est = np.ravel(sigma_est).tolist()
+                sigma_ests.append(sigma_est)
+            else:
+                raise ValueError("Unsupported method for solving linear equation")
             
+        sigma_ests = np.array(sigma_ests)
+
+        sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
+
         if self.get_trace:
             self.get_trace_summary(trace_dict)
             
@@ -832,12 +821,11 @@ class RHE:
 
         return h2_liab, var_h2_liab**0.5, p_liab
 
-    def __call__(self, method: str = "QR"):
-        """
-        whole RHE process for self.log._debuging etc
-        """
+    def __call__(self, trait, method: str = "QR"):
+        
+        self.pheno = self.pheno_cp[:, trait].reshape(-1, 1)
         self.log._log("*****")
-        self.log._log("OUTPUT: ")
+        self.log._log(f"OUTPUT FOR TRAIT {trait}: ")
         self.pre_compute()
 
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
@@ -900,6 +888,9 @@ class RHE:
                 else:
                     output = self.calculate_liability_h2(est_h2, h2_errs[i])
                     self.log._log(f"Liability-scale h2_g[{i}] : {output[0]}, SE: {output[1]}, p-value: {output[2]}")
+        
+        if trait < self.num_traits - 1:
+            self._finalize()
 
         return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, h2_total_overlap, h2_errs_overlap, enrichment_total_overlap, enrichment_errs_overlap
     

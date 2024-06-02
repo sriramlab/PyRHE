@@ -70,7 +70,7 @@ def main(args):
     if (args.samp_prev is not None) != (args.pop_prev is not None):
         raise ValueError('Must set both or neither of --samp-prev and --pop-prev.')
 
-
+    results = {}
 
     log._debug(f"processing {pheno_file}")
     if args.streaming:
@@ -120,39 +120,40 @@ def main(args):
         )
 
     # RHE
-    start = time.time()
+    
 
-    sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, _, _, _, _ = rhe()
+    for trait in range(rhe.num_traits):
+        start = time.time()
+        sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, _, _, _, _ = rhe(trait=trait)
+        end = time.time()
 
-    end = time.time()
+        runtime = end - start
 
-    runtime = end - start
+        results[f"Trait{trait}"] = {
+            "sigma_ests_total": sigma_ests_total,
+            "sig_errs": sig_errs,
+            "h2_total": h2_total,
+            "h2_errs": h2_errs,
+            "enrichment_total": enrichment_total,
+            "enrichment_errs": enrichment_errs,
+        }
 
     log._save_log()
 
-    result = {
-        "sigma_ests_total": sigma_ests_total.tolist() if isinstance(sigma_ests_total, np.ndarray) else sigma_ests_total,
-        "sig_errs": sig_errs.tolist() if isinstance(sig_errs, np.ndarray) else sig_errs,
-        "h2_total": h2_total.tolist() if isinstance(h2_total, np.ndarray) else h2_total,
-        "h2_errs": h2_errs.tolist() if isinstance(h2_errs, np.ndarray) else h2_errs,
-        "enrichment_total": enrichment_total.tolist() if isinstance(enrichment_total, np.ndarray) else enrichment_total,
-        "enrichment_errs": enrichment_errs.tolist() if isinstance(enrichment_errs, np.ndarray) else enrichment_errs,
-        "runtime": runtime
-    }
 
-    if not args.benchmark_runtime:
-        use_cov = "cov" if args.covariate is not None else "no_cov"
-        result_dir = f"{RESULT_DIR}/pyrhe_output/{use_cov}/bin_{args.num_bin}"
-        if not os.path.exists(result_dir):
-            os.makedirs(result_dir)
+    # if not args.benchmark_runtime:
+    #     use_cov = "cov" if args.covariate is not None else "no_cov"
+    #     result_dir = f"{RESULT_DIR}/pyrhe_output/{use_cov}/bin_{args.num_bin}"
+    #     if not os.path.exists(result_dir):
+    #         os.makedirs(result_dir)
         
-        output_file_path = os.path.join(result_dir, f"{args.debug_output}.json")
+    #     output_file_path = os.path.join(result_dir, f"{args.debug_output}.json")
 
-        with open(output_file_path, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=4)
+    #     with open(output_file_path, 'w', encoding='utf-8') as f:
+    #         json.dump(results, f, ensure_ascii=False, indent=4)
     
-    else:
-        return runtime
+    # else:
+    #     return runtime
     
 
 if __name__ == '__main__':

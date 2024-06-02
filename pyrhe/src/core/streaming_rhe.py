@@ -13,46 +13,9 @@ from pyrhe.src.util.logger import Logger
 class StreamingRHE(RHE):
     def __init__(
         self,
-        geno_file: str,
-        annot_file: str = None,
-        pheno_file: str = None,
-        cov_file: str = None,
-        num_bin: int = 8,
-        num_jack: int = 1,
-        num_random_vec: int = 10,
-        geno_impute_method: GenoImputeMethod = "binary",
-        cov_impute_method: CovImputeMethod = "ignore",
-        device: str = "cpu",
-        cuda_num: Optional[int] = None,
-        num_workers: Optional[int] = None,
-        multiprocessing: bool = True,
-        seed: Optional[int] = None,
-        get_trace: bool = False,
-        trace_dir: Optional[str] = None,
-        samp_prev: Optional[float] = None,
-        pop_prev: Optional[float] = None,
-        log: Optional[Logger] = None
+        **kwargs
     ):
-        super().__init__(
-            geno_file=geno_file,
-            annot_file=annot_file,
-            pheno_file=pheno_file,
-            cov_file=cov_file,
-            num_bin=num_bin,
-            num_jack=num_jack,
-            num_random_vec=num_random_vec,
-            geno_impute_method=geno_impute_method,
-            cov_impute_method=cov_impute_method,
-            device=device,
-            cuda_num=cuda_num,
-            num_workers=num_workers,
-            multiprocessing=multiprocessing,
-            seed=seed,
-            get_trace=get_trace,
-            trace_dir=trace_dir,
-            samp_prev=samp_prev,
-            pop_prev=pop_prev
-        )
+        super().__init__(**kwargs) 
     
     def _aggregate(self):
         self.XXz_per_jack = np.zeros((self.num_bin, 2, self.num_random_vec, self.num_indv), dtype=np.float64)
@@ -86,8 +49,6 @@ class StreamingRHE(RHE):
             all_gen = self.partition_bins(subsample, sub_annot)
 
             for k, X_kj in enumerate(all_gen):
-                self.log._debug(X_kj.shape)
-
                 self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1] # store the dimension with the corresponding block
                 for b in range(self.num_random_vec):
                     XXz_kjb = self._compute_XXz(b, X_kj)
