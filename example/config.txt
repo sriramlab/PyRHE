@@ -1,12 +1,12 @@
 [PyRHE_Config]
 genotype = test
-phenotype = test.pheno.multi
+phenotype = test.pheno
 annotation=single.annot
 covariate=test.cov
 num_vec = 10
 num_bin = 1
 num_block = 100
-streaming = no
+streaming = yes
 debug = yes
 get_trace = no
 benchmark_runtime = no

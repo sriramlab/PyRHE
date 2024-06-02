@@ -384,32 +384,44 @@ class RHE:
         v = mat_mul(X_kj.T, pheno, device=self.device)
         return mat_mul(v.T, v, device=self.device)
 
-    def _setup_shared_memory(self, num_blocks):
-        self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
-        self.XXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
-        self.XXz.fill(0)
+    ### Shared Memory
+    def shared_memory(self):
+        self.shared_memory_arrays = {
+            "XXz": ((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+            "yXXy": ((self.num_bin, self.num_jack + 1), np.float64),
+            "UXXz": ((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+            "XXUz": ((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+        }
 
-        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * np.float64().itemsize)
-        self.yXXy = np.ndarray((self.num_bin, num_blocks), dtype=np.float64, buffer=self.yXXy_shm.buf)
-        self.yXXy.fill(0)
 
-        if self.use_cov:
-            self.UXXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * self.num_random_vec * self.num_indv * np.float64().itemsize)
-            self.UXXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.UXXz_shm.buf)
-            self.UXXz.fill(0)
+    def create_shared_memory(self, arrays):
+        for name, (shape, dtype) in arrays.items():
+            shm = shared_memory.SharedMemory(create=True, size=np.prod(shape) * np.dtype(dtype).itemsize)
+            setattr(self, name, np.ndarray(shape, dtype=dtype, buffer=shm.buf))
+            setattr(self, f"{name}_shm", shm)
 
-            self.XXUz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
-            self.XXUz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXUz_shm.buf)
-            self.XXUz.fill(0)
-        else:
-            self.UXXz = None
-            self.XXUz = None
-        
+    def _setup_shared_memory(self):
+        self.shared_memory()
+        self.create_shared_memory(self.shared_memory_arrays)
+
+        for name in self.shared_memory_arrays.keys():
+            getattr(self, name).fill(0)
+
         self.M_shm = shared_memory.SharedMemory(create=True, size= (self.num_jack + 1) * self.num_bin * np.int64().itemsize)
         self.M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=self.M_shm.buf)
         self.M.fill(0)
         self.M[self.num_jack] = self.len_bin
 
+
+
+    def pre_compute_jackknife_bin(self, j, k, X_kj):
+        self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
+        for b in range(self.num_random_vec):
+            self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+            if self.use_cov:
+                self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
+                self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+        self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
 
     def _pre_compute_worker(self, worker_num, start_j, end_j):
         try:
@@ -434,13 +446,8 @@ class RHE:
 
 
                 for k, X_kj in enumerate(all_gen): 
-                    self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
-                    for b in range(self.num_random_vec):
-                        self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
-                        if self.use_cov:
-                            self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                            self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-                    self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+                    self.pre_compute_jackknife_bin(j, k, X_kj)
+                    
 
                 end_whole = time.time()
                 self.log._debug(f"jackknife {j} precompute total time: {end_whole - start_whole}")
@@ -455,12 +462,11 @@ class RHE:
 
     def pre_compute(self):
         from . import StreamingRHE
-        num_block = self.num_workers if isinstance(self, StreamingRHE) else self.num_jack + 1
 
         start_whole = time.time()
 
         if self.multiprocessing:
-            self._setup_shared_memory(num_block)
+            self._setup_shared_memory()
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
 
             processes = []
@@ -517,21 +523,11 @@ class RHE:
                             self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
     def _finalize(self):
-        if hasattr(self, 'XXz_shm'):
-            self.XXz_shm.close()
-            self.XXz_shm.unlink()
-        
-        if hasattr(self, 'yXXy_shm'):
-            self.yXXy_shm.close()
-            self.yXXy_shm.unlink()
-        
-        if hasattr(self, 'UXXz_shm'):
-            self.UXXz_shm.close()
-            self.UXXz_shm.unlink()
-        
-        if hasattr(self, 'XXUz_shm'):
-            self.XXUz_shm.close()
-            self.XXUz_shm.unlink()
+        for name in self.shared_memory_arrays.keys():
+            if hasattr(self, f'{name}_shm'):
+                shm = getattr(self, f'{name}_shm')
+                shm.close()
+                shm.unlink()
         
         if hasattr(self, 'M_shm'):
             self.M_shm.close()

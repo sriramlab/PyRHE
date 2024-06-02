@@ -30,6 +30,14 @@ class StreamingRHE(RHE):
                     self.UXXz_per_jack[k, 0, b, :] = np.sum(self.UXXz[k, :, b, :], axis=0) 
                 if self.XXUz_per_jack is not None:
                     self.XXUz_per_jack[k, 0, b, :] = np.sum(self.XXUz[k, 0, b, :], axis=0)
+        
+    def shared_memory(self):
+        self.shared_memory_arrays = {
+            "XXz": ((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+            "yXXy": ((self.num_bin, self.num_workers), np.float64),
+            "UXXz": ((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+            "XXUz": ((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+        }
 
     def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue=None):
         if self.multiprocessing:

@@ -8,7 +8,7 @@
 Active essential options:
 	-g (genotype) test
 	-annot (annotation) single.annot
-	-p (phenotype) test.pheno.multi
+	-p (phenotype) test.pheno
 	-c (covariates) test.cov
 	-o (output) test.out
 	-k (# random vectors) 10
@@ -19,7 +19,7 @@ Active essential options:
 	--cov_impute_method ignore
 
 
-Number of traits: 2
+Number of traits: 1
 Number of individuals after filtering: 5000
 Number of covariates: 5
 *****
@@ -27,12 +27,12 @@ Number of features in bin 0 : 10000
 *****
 OUTPUT FOR TRAIT 0: 
 Variance components: 
-Sigma^2_g[0] : 0.16565707535204235  SE : 0.03128760407254276
-Sigma^2_e : 0.793772471442386  SE : 0.031285864661350186
+Sigma^2_g[0] : 0.16597885017147812  SE : 0.03135423615675069
+Sigma^2_e : 0.7934506952738024  SE : 0.03135247062873438
 *****
 Heritabilities:
-h2_g[0] : 0.17266205309761715 : 0.032610322241655776
-Total h2 : 0.17266205309761715 SE: 0.032610322241655776
+h2_g[0] : 0.17299743473549767 : 0.03267976670189794
+Total h2 : 0.17299743473549767 SE: 0.03267976670189794
 *****
 Enrichments: 
 Enrichment g[0] : 1.0 SE : 0.0
@@ -40,27 +40,7 @@ Enrichment g[0] : 1.0 SE : 0.0
 *****
 Heritabilities and enrichments computed based on overlapping setting
 Heritabilities:
-h2_g[0] : 0.17266205309760546 : 0.0326103222416687
-Total h2 : 0.17266205309761715 SE: 0.032610322241655776
+h2_g[0] : 0.17299743473551485 : 0.03267976670189945
+Total h2 : 0.17299743473549767 SE: 0.03267976670189794
 Enrichments (overlapping def):
-Enrichment g[0] : 0.9999999999999323 SE : 1.2395378508479998e-12
-*****
-OUTPUT FOR TRAIT 1: 
-Variance components: 
-Sigma^2_g[0] : 0.16565707535204235  SE : 0.03128760407254276
-Sigma^2_e : 0.793772471442386  SE : 0.031285864661350186
-*****
-Heritabilities:
-h2_g[0] : 0.17266205309761715 : 0.032610322241655776
-Total h2 : 0.17266205309761715 SE: 0.032610322241655776
-*****
-Enrichments: 
-Enrichment g[0] : 1.0 SE : 0.0
-*****
-*****
-Heritabilities and enrichments computed based on overlapping setting
-Heritabilities:
-h2_g[0] : 0.17266205309760546 : 0.0326103222416687
-Total h2 : 0.17266205309761715 SE: 0.032610322241655776
-Enrichments (overlapping def):
-Enrichment g[0] : 0.9999999999999323 SE : 1.2395378508479998e-12
+Enrichment g[0] : 1.0000000000000993 SE : 1.2342641097701131e-12
