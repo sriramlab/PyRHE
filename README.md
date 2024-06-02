@@ -44,33 +44,10 @@ cov_impute_method: How to impute missing covariate ("ignore" (ignore individuals
 samp_prev: Sample prevalence of binary phenotype (for conversion to liability scale)
 pop_prev: Population prevalence of binary phenotype (for conversion to liability scale)
 trace (-tr): Save the stochastic trace estimates as trace summary statistics (.trace) with metadata (.MN)
+trace_dir: Directory to save the trace estimates
 ```
 
-PyRHE is easily incorporated in your own project using (TODO: Add a notebook):
-
-```python
-from pyrhe.src.core import RHE
-
-rhe = RHE(
-      geno_file={geno_file_path},
-      annot_file={annot_file_path},
-      pheno_file={pheno_file},
-      cov_file={covariate_file_path},
-      num_jack={num_jackknife_blocks},
-      num_bin={num_bins},
-      num_random_vec={num_random_vecs},
-      device={device},
-      cuda_num ={cuda_number},
-      multiprocessing={whether_to_use_multiprocessing}
-      num_workers={num_workers_for_multiprocessing},
-      seed={seed},
-      get_trace={whether_to_get_trace_estimate_summary}
-      )
-
-sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs = rhe()
-
-```
-Replace the `RHE` with `StreamingRHE` in the above to get the memory efficient streaming version of estimation
+PyRHE is easily incorporated in your own project. Here is [an example notebook](https://github.com/sriramlab/PyRHE/blob/main/small_sample.ipynb) for how to do so.
 
 
 # Comparison between PyRHE & Original RHE
