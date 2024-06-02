@@ -72,35 +72,38 @@ def read_pheno(filename):
     try:
         with open(filename, 'r') as file:
             lines = file.readlines()
-        
-        lines = lines[1:]
-        
+
+        header = lines[0].strip().split() # Number of phenotypes
+        num_phenotypes = len(header) - 2
+        lines = lines[1:]  # Exclude header
+
         y = [] 
         missing_indv = []
 
         all_binary = True
-        valid_values = {'0', '1', '2'} 
+        valid_values = {0, 1, 2}
 
         for i, line in enumerate(lines):
             columns = line.strip().split()
-            if columns[2] == "NA" or float(columns[2]) == -9:
-                y.append(-9)
+            if "NA" in columns[2:] or -9 in [float(val) if val != "NA" else -9 for val in columns[2:]]:
+                phenotypes = [-9] * num_phenotypes
                 missing_indv.append(i)
             else:
-                y.append(float(columns[2]))
-                if float(columns[2]) not in valid_values:
+                phenotypes = [float(val) for val in columns[2:]]
+                if not all(p in valid_values for p in phenotypes):
                     all_binary = False
-        
-        y = np.array(y).reshape(-1, 1)
+
+            y.append(phenotypes)
+
+        y = np.array(y)
         return y, missing_indv, all_binary
-    
+
     except FileNotFoundError:
         raise FileNotFoundError("Error: The pheno file could not be found.")
     except IOError:
         raise
     except Exception as e:
-        raise 
-
+        raise
 
 def generate_annot(filename, num_snp, num_bin):
     try:

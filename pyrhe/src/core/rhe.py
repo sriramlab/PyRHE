@@ -110,6 +110,9 @@ class RHE:
         else:
             self.pheno = None
             missing_indv = []
+        
+        self.num_traits = self.pheno.shape[1]
+        self.log._log(f"Number of traits: {self.num_traits}")
     
         # read covariate file
         if cov_file is None:
@@ -127,7 +130,7 @@ class RHE:
             self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
 
         if self.pheno is not None:
-            self.pheno = self.pheno - np.mean(self.pheno) # center phenotype
+            self.pheno = self.pheno - np.mean(self.pheno, axis=0) # center phenotype
         
         self.num_indv = self.num_indv_original - len(self.missing_indv)
         for idx, missing_idx in enumerate(self.missing_indv, start=1):
@@ -375,17 +378,24 @@ class RHE:
         return mat_mul(X_kj, mat_mul(X_kj.T, random_vec_cov, device=self.device), device=self.device).flatten()  
 
     def _compute_yXXy(self, X_kj, y):
-        pheno = y if not self.use_cov else self.regress_pheno(self.cov_matrix, y)
-        v = mat_mul(X_kj.T, pheno, device=self.device)
-        return mat_mul(v.T, v, device=self.device)
+        yXXy_results = np.zeros((self.num_traits,))
+
+        for i in range(self.num_traits):
+            pheno = y[:, i:i+1] 
+            if self.use_cov:
+                pheno = self.regress_pheno(self.cov_matrix, pheno)
+            v = mat_mul(X_kj.T, pheno, device=self.device)
+            yXXy_results[i] = mat_mul(v.T, v, device=self.device).item()  # Get the scalar value
+
+        return yXXy_results
 
     def _setup_shared_memory(self, num_blocks):
         self.XXz_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * num_blocks * self.num_random_vec * self.num_indv * np.float64().itemsize)
         self.XXz = np.ndarray((self.num_bin, num_blocks, self.num_random_vec, self.num_indv), dtype=np.float64, buffer=self.XXz_shm.buf)
         self.XXz.fill(0)
 
-        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * np.float64().itemsize)
-        self.yXXy = np.ndarray((self.num_bin, num_blocks), dtype=np.float64, buffer=self.yXXy_shm.buf)
+        self.yXXy_shm = shared_memory.SharedMemory(create=True, size=self.num_bin * (num_blocks) * self.num_traits * np.float64().itemsize)
+        self.yXXy = np.ndarray((self.num_bin, num_blocks, self.num_traits), dtype=np.float64, buffer=self.yXXy_shm.buf)
         self.yXXy.fill(0)
 
         if self.use_cov:
@@ -435,7 +445,10 @@ class RHE:
                         if self.use_cov:
                             self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
                             self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-                    self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+                    yXXy_results = self._compute_yXXy(X_kj, self.pheno)
+                    print(yXXy_results.shape)
+
+                    self.yXXy[k, j, :] = yXXy_results
 
                 end_whole = time.time()
                 self.log._debug(f"jackknife {j} precompute total time: {end_whole - start_whole}")
@@ -476,7 +489,7 @@ class RHE:
 
             else:
                 self.XXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64)
-                self.yXXy = np.zeros((self.num_bin, num_block), dtype=np.float64)
+                self.yXXy = np.zeros((self.num_bin, num_block, self.num_traits), dtype=np.float64)
                 self.UXXz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
                 self.XXUz = np.zeros((self.num_bin, num_block, self.num_random_vec, self.num_indv), dtype=np.float64) if self.use_cov else None
 
@@ -492,12 +505,12 @@ class RHE:
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
                         self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
-                    self.yXXy[k][self.num_jack] += self.yXXy[k][j]
+                    self.yXXy[k, self.num_jack, :] += self.yXXy[k, j, :]
                 
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
                         self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
-                    self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
+                    self.yXXy[k, j, :] = self.yXXy[k, self.num_jack, :] - self.yXXy[k, j, :]
             
             if self.use_cov:
                 for k in range(self.num_bin):
@@ -510,6 +523,7 @@ class RHE:
                         for b in range (self.num_random_vec):
                             self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
                             self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
+    
 
     def _finalize(self):
         if hasattr(self, 'XXz_shm'):
@@ -548,7 +562,9 @@ class RHE:
             sigma^2 for the whole genotype matrix [sigma_1^2 sigma_2^2 ... sigma_e^2]
 
         """
-        sigma_ests = []
+        sigma_est_jackknife = [[] for _ in range(self.num_traits)]  # A list for each trait
+        sigma_ests_total = [[] for _ in range(self.num_traits)]
+
         if self.get_trace:
             trace_dict = {}
 
@@ -556,7 +572,7 @@ class RHE:
             self.log._debug(f"Estimate for jackknife sample {j}")
 
             T = np.zeros((self.num_bin+1, self.num_bin+1))
-            q = np.zeros((self.num_bin+1, 1))
+            q = np.zeros((self.num_bin+1, self.num_traits))
 
             for k_k in range(self.num_bin):
                 for k_l in range(self.num_bin):
@@ -598,8 +614,9 @@ class RHE:
 
                     T[k, self.num_bin] = self.num_indv - tk_res
                     T[self.num_bin, k] = self.num_indv - tk_res
-
-                q[k] = self.yXXy[(k, j)] / M_k if M_k != 0 else 0
+                
+                # print(self.yXXy[k][j])
+                q[k, :] = np.where(M_k != 0, self.yXXy[k][j] / M_k, 0)
             
             
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
@@ -608,23 +625,22 @@ class RHE:
                 trace_dict[j] = ((T[0][0], self.M[j]))
 
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
-            q[self.num_bin] = pheno.T @ pheno 
+            q[self.num_bin, :] = np.diag(pheno.T @ pheno) 
 
-            if method == "lstsq":
-                sigma_est = self.solve_linear_equation(T,q)
+            for t in range(self.num_traits):
+                if method == "lstsq":
+                    sigma_est = self.solve_linear_equation(T, q[:, t:t+1])
+                elif method == "QR":
+                    sigma_est = self.solve_linear_qr(T, q[:, t:t+1])
+                else:
+                    raise ValueError("Unsupported method for solving linear equation")
+
                 sigma_est = np.ravel(sigma_est).tolist()
-                sigma_ests.append(sigma_est)
-            elif method == "QR":
-                sigma_est = self.solve_linear_qr(T,q)
-                sigma_est = np.ravel(sigma_est).tolist()
-                sigma_ests.append(sigma_est)
-            else:
-                raise ValueError("Unsupported method for solving linear equation")
+                if j == self.num_jack:
+                    sigma_ests_total[t].append(sigma_est)
+                else:
+                    sigma_est_jackknife[t].append(sigma_est)
             
-        sigma_ests = np.array(sigma_ests)
-
-        sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
-
         if self.get_trace:
             self.get_trace_summary(trace_dict)
             
