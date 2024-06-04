@@ -1,7 +1,6 @@
 import time
 from typing import Optional
 from tqdm import tqdm
-from pyrhe.src.core.rhe import RHE
 from typing import List, Tuple
 import numpy as np
 import multiprocessing
@@ -10,7 +9,7 @@ from pyrhe.src.util.types import *
 from pyrhe.src.util.logger import Logger
 
 
-class StreamingRHE(RHE):
+class StreamingBase(Base):
     def __init__(
         self,
         **kwargs
