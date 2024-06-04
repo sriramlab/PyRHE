@@ -25,4 +25,5 @@ generated_annot
 test_small_sample.py
 
 
-!example/**/*
+# !example/**/*
+/example
