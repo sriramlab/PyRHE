@@ -443,6 +443,7 @@ class Base(ABC):
 
 
                 for k, X_kj in enumerate(all_gen): 
+                    self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
                     self.pre_compute_jackknife_bin(j, k, X_kj)
                     
 

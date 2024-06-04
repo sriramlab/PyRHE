@@ -19,7 +19,6 @@ class RHE(Base):
             }
 
     def pre_compute_jackknife_bin(self, j, k, X_kj):
-        self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
         for b in range(self.num_random_vec):
             self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
             if self.use_cov:
