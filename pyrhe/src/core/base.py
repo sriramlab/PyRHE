@@ -1,6 +1,7 @@
 import os
 import time
 import torch
+import traceback
 import scipy
 import atexit
 from abc import ABC, abstractmethod
@@ -170,6 +171,9 @@ class Base(ABC):
         self.pop_prev = pop_prev
 
         self.pheno_cp = self.pheno.copy()
+
+        self.num_estimates = None
+  
     
     def _init_device(self, device, cuda_num):
         if device != "cpu":
@@ -403,12 +407,12 @@ class Base(ABC):
         self.create_shared_memory(self.shared_memory_arrays)
 
         for name in self.shared_memory_arrays.keys():
-            getattr(self, name).fill(0)
+            if name != "M":
+                getattr(self, name).fill(0)
 
-        self.M_shm = shared_memory.SharedMemory(create=True, size= (self.num_jack + 1) * self.num_bin * np.int64().itemsize) if self.multiprocessing else None
-        self.M =  np.ndarray((self.num_jack + 1, self.num_bin), buffer=self.M_shm.buf if self.multiprocessing else None)
+        self.M = getattr(self, "M")
         self.M.fill(0)
-        self.M[self.num_jack] = self.len_bin
+        self.M[self.num_jack] = self.M_last_row
     
     
     @abstractmethod
@@ -416,8 +420,32 @@ class Base(ABC):
         pass
     
     @abstractmethod
-    def aggregate(self):
+    def get_num_estimates(self):
         pass
+    
+    def aggregate(self):
+        for k in range(self.num_estimates):
+            for j in range(self.num_jack):
+                for b in range (self.num_random_vec):
+                    self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
+                self.yXXy[k][self.num_jack] += self.yXXy[k][j]
+            
+            for j in range(self.num_jack):
+                for b in range (self.num_random_vec):
+                    self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
+                self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
+        
+        if self.use_cov:
+            for k in range(self.num_estimates):
+                for j in range(self.num_jack):
+                    for b in range (self.num_random_vec):
+                        self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
+                        self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
+                                        
+                for j in range(self.num_jack):
+                    for b in range (self.num_random_vec):
+                        self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
+                        self.XXUz[k][j][b] = self.XXUz[k][self.num_jack][b] - self.XXUz[k][j][b]
 
     
     def _pre_compute_worker(self, worker_num, start_j, end_j):
@@ -441,16 +469,13 @@ class Base(ABC):
                 # self.log._debug(f"impute time: {end - start}")
                 all_gen = self.partition_bins(subsample, sub_annot)
 
-
-                for k, X_kj in enumerate(all_gen): 
-                    self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
-                    self.pre_compute_jackknife_bin(j, k, X_kj)
+                self.pre_compute_jackknife_bin(j, all_gen)
                     
-
                 end_whole = time.time()
                 self.log._debug(f"jackknife {j} precompute total time: {end_whole - start_whole}")
         except Exception as e:
             self.log._debug(f"Error in worker {worker_num} processing range {start_j}-{end_j}: {e}")
+            raise
 
 
     def _distribute_work(self, num_jobs, num_workers):
@@ -473,15 +498,15 @@ class Base(ABC):
             mp_handler = MultiprocessingHandler(target=self._pre_compute_worker, work_ranges=work_ranges, device=self.device)
             mp_handler.start_processes()
             mp_handler.join_processes()
-             
+            
         else:
             for j in tqdm(range(self.num_jack), desc="Preprocessing jackknife subsamples..."):
                 self._pre_compute_worker(0, j, j + 1)
+        
 
         end_whole = time.time()
 
         self.log._debug(f"Precompute total time: {end_whole - start_whole}")
-
         self.aggregate()
 
     def _finalize(self):
@@ -492,14 +517,64 @@ class Base(ABC):
                     shm.close()
                     shm.unlink()
             
-            if hasattr(self, 'M_shm'):
-                self.M_shm.close()
-                self.M_shm.unlink()
+            # if hasattr(self, 'M_shm'):
+            #     self.M_shm.close()
+            #     self.M_shm.unlink()
 
-    @abstractmethod
     def setup_lhs_rhs_jackknife(self, j):
-        pass
+        T = np.zeros((self.num_estimates+1, self.num_estimates+1))
+        q = np.zeros((self.num_estimates+1, 1))
+
+        for k_k in range(self.num_estimates):
+            for k_l in range(self.num_estimates):
+                M_k = self.M[j][k_k]
+                M_l = self.M[j][k_l]
+                B1 = self.XXz[k_k][j]
+                B2 = self.XXz[k_l][j]
+                T[k_k, k_l] += np.sum(B1 * B2)
+
+                if self.use_cov:
+                    h1 = self.cov_matrix.T @ B1.T
+                    h2 = self.Q @ h1
+                    h3 = self.cov_matrix @ h2
+                    trkij_res1 = np.sum(h3.T * B2)
+
+                    B1 = self.XXUz[k_k][j]
+                    B2 = self.UXXz[k_l][j]
+                    trkij_res2 = np.sum(B1 * B2)
+                
+                    T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
+
+
+                T[k_k, k_l] /= (self.num_random_vec)
+                T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
+
+
+        for k in range(self.num_estimates):
+            M_k = self.M[j][k]
+
+            if not self.use_cov:
+                T[k, self.num_estimates] = self.num_indv
+                T[self.num_estimates, k] = self.num_indv
+
+            else:
+                B1 = self.XXz[k][j]
+                C1 = self.all_Uzb
+                tk_res = np.sum(B1 * C1.T)
+                tk_res = 1/(self.num_random_vec * M_k) * tk_res
+
+                T[k, self.num_estimates] = self.num_indv - tk_res
+                T[self.num_estimates, k] = self.num_indv - tk_res
+
+            q[k] = self.yXXy[(k, j)] / M_k if M_k != 0 else 0
         
+        
+        T[self.num_estimates, self.num_estimates] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
+
+        pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
+        q[self.num_estimates] = pheno.T @ pheno
+
+        return T, q
             
     def estimate(self, method: str = "lstsq") -> Tuple[List[List], List]:
         """
@@ -597,7 +672,7 @@ class Base(ABC):
         for j in range(self.num_jack + 1):
             sigma_ests_jack = sigma_ests[j]
             total = 0
-            for k in range (self.num_bin):
+            for k in range (self.num_estimates):
                 total += sigma_ests_jack[k]
             assert sigma_ests_jack[-1] == sigma_ests_jack[k+1]
             h2_list = [x / (total + sigma_ests_jack[-1])  for x in sigma_ests_jack[:-1]]
@@ -621,7 +696,7 @@ class Base(ABC):
         for j in range(self.num_jack + 1):
             sigma_ests_jack = sigma_ests[j]
             total = 0
-            for k in range (self.num_bin):
+            for k in range (self.num_estimates):
                 total += sigma_ests_jack[k]
             assert sigma_ests_jack[-1] == sigma_ests_jack[k+1]
 
@@ -629,7 +704,7 @@ class Base(ABC):
 
             sub_annot = self._get_annot_subsample(jack_index=j)
 
-            for k in range(self.num_bin):
+            for k in range(self.num_estimates):
                 snp_indices = np.where(sub_annot[:, k] == 1)[0]
                 total_k = 0
                 for snp_idx in snp_indices:
@@ -679,7 +754,7 @@ class Base(ABC):
         for j in range(self.num_jack + 1):
             h2_jack = h2[j]
             enrichment_jack_bin = []
-            for k in range (self.num_bin):
+            for k in range (self.num_estimates):
                 hk_2 = h2_jack[k]
                 h_SNP_2 = h2_jack[-1]
                 M_k = self.M[j][k]

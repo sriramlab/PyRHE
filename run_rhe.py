@@ -1,7 +1,7 @@
 import argparse
 import os
 import numpy as np
-from pyrhe.src.core import RHE, StreamingRHE
+from pyrhe.src.core import RHE, StreamingRHE, GENIE
 from pyrhe.src.util import Logger
 from constant import DATA_DIR, RESULT_DIR
 import json
@@ -97,11 +97,12 @@ def main(args):
         )
 
     else:
-        rhe = RHE(
+        rhe = GENIE(
             geno_file=args.genotype,
             annot_file=annot_path,
             pheno_file=pheno_file,
             cov_file=args.covariate,
+            env_file=args.env,
             num_jack=args.num_block,
             num_bin=args.num_bin,
             num_random_vec=args.num_vec,
@@ -166,6 +167,7 @@ if __name__ == '__main__':
     parser.add_argument('--genotype', '-g', type=str, help='genotype file path')
     parser.add_argument('--phenotype', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
+    parser.add_argument('--env', '-e', type=str, default=None, help='Environment file path')
     parser.add_argument('--annotation', '-annot', type=str, default=None, help='Annotation file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
     parser.add_argument('--num_bin', '-b', type=int, default=8, help='Number of bins')

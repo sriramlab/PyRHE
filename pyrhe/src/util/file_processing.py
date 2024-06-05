@@ -158,3 +158,21 @@ def read_cov(filename, std: bool=False, missing_indvs=None, cov_impute_method="i
         raise
     except Exception as e:
         raise e
+
+
+def read_env_file(file_path):
+    try:
+        df = pd.read_csv(file_path, sep='\s+')
+
+        num_env = len(df.columns) - 2  
+
+        env_vector = df['env'].to_numpy()
+    
+        return num_env, env_vector
+    
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Error: The file '{file_path}' could not be found.")
+    except IOError:
+        raise
+    except Exception as e:
+        raise e
