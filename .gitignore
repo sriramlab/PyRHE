@@ -4,6 +4,8 @@
 DG*
 build
 data*/
+dist/
+
 
 __pycache__/
 generated_annot
