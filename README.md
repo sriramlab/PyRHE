@@ -5,7 +5,7 @@
 # Installation 
 
 ```
-pip install rhe
+pip install pyrhe
 # Also install proper version of PyTorch from https://pytorch.org/ 
 ```
 
