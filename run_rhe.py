@@ -73,55 +73,44 @@ def main(args):
     results = {}
 
     log._debug(f"processing {pheno_file}")
-    if args.streaming:
-        rhe = StreamingRHE(
-            geno_file=args.genotype,
-            annot_file=annot_path,
-            pheno_file=pheno_file,
-            cov_file=args.covariate,
-            num_jack=args.num_block,
-            num_bin=args.num_bin,
-            num_random_vec=args.num_vec,
-            geno_impute_method=args.geno_impute_method,
-            cov_impute_method=args.cov_impute_method,
-            device=args.device,
-            cuda_num =args.cuda_num,
-            multiprocessing=args.multiprocessing,
-            num_workers=args.num_workers,
-            seed=args.seed,
-            get_trace=args.trace,
-            trace_dir=args.trace_dir,
-            samp_prev=args.samp_prev,
-            pop_prev=args.pop_prev,
-            log=log,
-        )
+
+
+    params = {
+        'geno_file': args.genotype,
+        'annot_file': annot_path,
+        'pheno_file': pheno_file,
+        'cov_file': args.covariate,
+        'num_jack': args.num_block,
+        'num_bin': args.num_bin,
+        'num_random_vec': args.num_vec,
+        'geno_impute_method': args.geno_impute_method,
+        'cov_impute_method': args.cov_impute_method,
+        'cov_one_hot_conversion': args.cov_one_hot_conversion,
+        'device': args.device,
+        'cuda_num': args.cuda_num,
+        'multiprocessing': args.multiprocessing,
+        'num_workers': args.num_workers,
+        'seed': args.seed,
+        'get_trace': args.trace,
+        'trace_dir': args.trace_dir,
+        'samp_prev': args.samp_prev,
+        'pop_prev': args.pop_prev,
+        'log': log,
+    }
+
+    if args.model == "rhe":
+        if args.streaming:
+            rhe = StreamingRHE(**params)
+        else:
+            rhe = RHE(**params)
+    
+    elif args.model == "genie":
+        params['env_file'] = args.env
+        params['model'] = args.genie_model
+        rhe = GENIE(**params)
 
     else:
-        rhe = GENIE(
-            geno_file=args.genotype,
-            annot_file=annot_path,
-            pheno_file=pheno_file,
-            cov_file=args.covariate,
-            env_file=args.env,
-            num_jack=args.num_block,
-            num_bin=args.num_bin,
-            num_random_vec=args.num_vec,
-            geno_impute_method=args.geno_impute_method,
-            cov_impute_method=args.cov_impute_method,
-            device=args.device,
-            cuda_num =args.cuda_num,
-            multiprocessing=args.multiprocessing,
-            num_workers=args.num_workers,
-            seed=args.seed,
-            get_trace=args.trace,
-            trace_dir=args.trace_dir,
-            samp_prev=args.samp_prev,
-            pop_prev=args.pop_prev,
-            log=log
-        )
-
-    # RHE
-    
+        raise ValueError("Unsupported Model")
 
     for trait in range(rhe.num_traits):
         start = time.time()
@@ -158,8 +147,12 @@ def main(args):
     
 
 if __name__ == '__main__':
+    # TODO: use config file instead of argparse
     parser = argparse.ArgumentParser(description='PyRHE') 
+    parser.add_argument('--model', type=str, default="rhe", choices=['rhe', 'genie'])
+    parser.add_argument('--genie_model', type=str, default="G+GxE+NxE", choices=['G', 'G+GxE', 'G+GxE+NxE'])
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
+
     parser.add_argument('--trace', '-tr', action='store_true', help='get the trace estimate')
     parser.add_argument('--trace_dir', type=str, default="", help='directory to save the trace information')
     parser.add_argument('--benchmark_runtime', action='store_true', help='benchmark the runtime')
@@ -167,6 +160,8 @@ if __name__ == '__main__':
     parser.add_argument('--genotype', '-g', type=str, help='genotype file path')
     parser.add_argument('--phenotype', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
+    parser.add_argument('--cov_one_hot_conversion', action='store_true', help='convert categorical variables in the covariate file into one-hot encoding')
+
     parser.add_argument('--env', '-e', type=str, default=None, help='Environment file path')
     parser.add_argument('--annotation', '-annot', type=str, default=None, help='Annotation file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')

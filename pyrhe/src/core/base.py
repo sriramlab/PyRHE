@@ -1,7 +1,6 @@
 import os
 import time
 import torch
-import traceback
 import scipy
 import atexit
 from abc import ABC, abstractmethod
@@ -33,6 +32,8 @@ class Base(ABC):
         num_random_vec: int = 10,
         geno_impute_method: GenoImputeMethod = "binary",
         cov_impute_method: CovImputeMethod = "ignore",
+        cov_one_hot_conversion: Optional[bool] = False,
+        categorical_threshhold: int = 100, 
         device: str = "cpu",
         cuda_num: Optional[int] = None,
         num_workers: Optional[int] = None,
@@ -82,7 +83,10 @@ class Base(ABC):
                 raise ValueError(f"The device only have {total_workers} cores but tried to specify {num_workers} workers")
             else:
                 if num_workers > total_workers // 10:
-                    self.log._debug(f"The device only have {total_workers} cores but tried to specify {num_workers} workers, recommend to decrease the worker count to avoid memory issues.")
+                    self.log._debug(
+                        f"The device only have {total_workers} cores but tried to specify {num_workers} workers, "
+                        f"recommend to decrease the worker count to avoid memory issues."
+                    )
                 self.num_workers = num_workers
         else:
             self.num_workers = total_workers // 10
@@ -127,10 +131,21 @@ class Base(ABC):
                 self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
         else:
             self.use_cov = True
-            self.cov_matrix, self.missing_indv = read_cov(cov_file, missing_indvs=missing_indv, cov_impute_method=cov_impute_method)
+            self.cov_matrix, self.missing_indv = read_cov(
+                cov_file, 
+                missing_indvs=missing_indv, 
+                cov_impute_method=cov_impute_method, 
+                one_hot_conversion=cov_one_hot_conversion, 
+                categorical_threshold=categorical_threshhold,
+                logger = self.log)
+        
+            
+            rank = np.linalg.matrix_rank(self.cov_matrix)
+            self.log._log(f"Rank of the covariate matrix: {rank}")
+
             if self.pheno is not None:
                 self.pheno = np.delete(self.pheno, self.missing_indv, axis=0)
-            self.Q = np.linalg.inv(self.cov_matrix.T @ self.cov_matrix)
+            self.Q = np.linalg.pinv(self.cov_matrix.T @ self.cov_matrix)
 
         if self.pheno is not None:
             self.pheno = self.pheno - np.mean(self.pheno, axis=0) # center phenotype
@@ -273,9 +288,9 @@ class Base(ABC):
         means = np.mean(X_imp, axis=0)
         stds = 1/np.sqrt(means*(1-0.5*means))
 
-        X_imp = (X_imp - means) * stds
+        X_imp_standardized = (X_imp - means) * stds
               
-        return X_imp
+        return X_imp_standardized, X_imp
 
     def solve_linear_equation(self, X, y):
         '''
@@ -371,7 +386,7 @@ class Base(ABC):
         """
         Project y onto the column space of the covariate matrix and compute the residual
         """
-        Q = np.linalg.inv(cov_matrix.T @ cov_matrix)
+        Q = np.linalg.pinv(cov_matrix.T @ cov_matrix)
         return pheno - cov_matrix @ (Q @ (cov_matrix.T @ pheno))
     
     def _compute_XXz(self, b, X_kj):
@@ -461,15 +476,17 @@ class Base(ABC):
                 subsample, sub_annot = self._get_jacknife_subsample(j)
 
                 start = time.time()
-                subsample = self.impute_geno(subsample, simulate_geno=True)
+                # subsample is standardized
+                subsample, subsample_original = self.impute_geno(subsample, simulate_geno=True)
 
                 assert subsample.shape[0] == self.num_indv
 
                 end = time.time()
                 # self.log._debug(f"impute time: {end - start}")
                 all_gen = self.partition_bins(subsample, sub_annot)
+                all_gen_original = self.partition_bins(subsample_original, sub_annot)
 
-                self.pre_compute_jackknife_bin(j, all_gen)
+                self.pre_compute_jackknife_bin(j, all_gen, all_gen_original) # TODO: improve
                     
                 end_whole = time.time()
                 self.log._debug(f"jackknife {j} precompute total time: {end_whole - start_whole}")
@@ -511,15 +528,12 @@ class Base(ABC):
 
     def _finalize(self):
         if self.multiprocessing:
-            for name in self.shared_memory_arrays.keys():
-                if hasattr(self, f'{name}_shm'):
-                    shm = getattr(self, f'{name}_shm')
-                    shm.close()
-                    shm.unlink()
-            
-            # if hasattr(self, 'M_shm'):
-            #     self.M_shm.close()
-            #     self.M_shm.unlink()
+            if hasattr(self, 'shared_memory_arrays'):
+                for name in self.shared_memory_arrays.keys():
+                    if hasattr(self, f'{name}_shm'):
+                        shm = getattr(self, f'{name}_shm')
+                        shm.close()
+                        shm.unlink()
 
     def setup_lhs_rhs_jackknife(self, j):
         T = np.zeros((self.num_estimates+1, self.num_estimates+1))
