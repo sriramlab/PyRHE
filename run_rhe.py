@@ -86,6 +86,7 @@ def main(args):
         'geno_impute_method': args.geno_impute_method,
         'cov_impute_method': args.cov_impute_method,
         'cov_one_hot_conversion': args.cov_one_hot_conversion,
+        'categorical_threshhold': args.categorical_threshhold,
         'device': args.device,
         'cuda_num': args.cuda_num,
         'multiprocessing': args.multiprocessing,
@@ -161,7 +162,7 @@ if __name__ == '__main__':
     parser.add_argument('--phenotype', '-p', type=str, default=None, help='phenotype file path')
     parser.add_argument('--covariate', '-c', type=str, default=None, help='Covariate file path')
     parser.add_argument('--cov_one_hot_conversion', action='store_true', help='convert categorical variables in the covariate file into one-hot encoding')
-
+    parser.add_argument('--categorical_threshhold', type=int, default=100, help='Maximum number of distinct values that should be considered categorical rather than quantitative')
     parser.add_argument('--env', '-e', type=str, default=None, help='Environment file path')
     parser.add_argument('--annotation', '-annot', type=str, default=None, help='Annotation file path')
     parser.add_argument('--num_vec', '-k', type=int, default=10, help='The number of random vectors (10 is recommended).')
