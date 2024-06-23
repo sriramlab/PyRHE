@@ -1,12 +1,11 @@
 # PyRHE
 
-PyRHE is an efficient and portable Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It converts large matrix into tensors to accelerate large matrix multiplication and incorporates multiprocessing to process Jackknife blocks in parallel. It is designed to run on both CPU and CUDA-enabled GPU, and is easy to install and integrate into other applications.
+[PyRHE](https://pypi.org/project/pyrhe/) is an efficient and portable Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It converts large matrix into tensors to accelerate large matrix multiplication and incorporates multiprocessing to process Jackknife blocks in parallel. It is designed to run on both CPU and CUDA-enabled GPU, and is easy to install and integrate into other applications.
 
 # Installation 
 
 ```
-git clone git@github.com:sriramlab/PyRHE.git
-pip install pyrhe/
+pip install pyrhe
 # Also install proper version of PyTorch from https://pytorch.org/ 
 ```
 
