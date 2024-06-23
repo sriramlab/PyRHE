@@ -11,12 +11,13 @@ class RHE(Base):
         super().__init__(**kwargs) 
 
     def shared_memory(self):
+        self.get_num_estimates()
         self.shared_memory_arrays = {
-                "XXz": ((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "yXXy": ((self.num_bin, self.num_jack + 1), np.float64),
-                "UXXz": ((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "XXUz": ((self.num_bin, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "M": ((self.num_jack + 1, self.num_bin), np.int64)
+                "XXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+                "yXXy": ((self.num_estimates, self.num_jack + 1), np.float64),
+                "UXXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+                "XXUz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+                "M": ((self.num_jack + 1, self.num_estimates), np.int64)
             }
         
         self.M_last_row = self.len_bin
@@ -24,7 +25,7 @@ class RHE(Base):
     def get_num_estimates(self):
         self.num_estimates = self.num_bin
 
-    def pre_compute_jackknife_bin(self, j, all_gen):
+    def pre_compute_jackknife_bin(self, j, all_gen, all_gen_original): # TODO: improve
         for k, X_kj in enumerate(all_gen): 
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             for b in range(self.num_random_vec):

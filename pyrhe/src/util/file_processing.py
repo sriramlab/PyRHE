@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from pyrhe.src.util.types import *
 
 
 def read_bim(filename):
@@ -117,7 +118,15 @@ def generate_annot(filename, num_snp, num_bin):
         raise 
 
 
-def read_cov(filename, std: bool=False, missing_indvs=None, cov_impute_method="ignore"):
+def read_cov(
+        filename, 
+        std: bool=False, 
+        missing_indvs: list = None, 
+        cov_impute_method: str = "ignore", 
+        one_hot_conversion: bool = False,
+        categorical_threshold: int = 100,
+        logger = None
+        ):
     try: 
         df = pd.read_csv(filename, sep='\s+')
         
@@ -146,11 +155,51 @@ def read_cov(filename, std: bool=False, missing_indvs=None, cov_impute_method="i
         
         all_missing_indvs = missing_indvs + newly_missing_indvs
 
+        # for one-hot encoding
+        df_one_hot = df.copy()
+
+        # detect categorical variables and handle one-hot encoding
+        for column in df.columns:
+            num_unique_values = df[column].nunique()
+            if num_unique_values <= categorical_threshold:
+                if one_hot_conversion:
+                    if logger:
+                        logger._debug(f"Column '{column}' detected as categorical with {num_unique_values} unique values.")  
+                    one_hot = pd.get_dummies(df[column], prefix=column, drop_first=False)
+
+                    one_hot = one_hot.astype(int)
+
+                    # save to a separate one-hot cov file
+                    file_name = f"{column}_one_hot.cov"
+                    one_hot.to_csv(file_name, index=False, sep=' ', header=False)
+                    
+                    if logger:
+                        logger._debug(f"One-hot encoded values for '{column}' stored in '{file_name}'")
+
+                    # drop the original column from the one-hot DataFrame
+                    df_one_hot = df_one_hot.drop(column, axis=1).join(one_hot)
+            else:
+                if logger:
+                    logger._debug(
+                        f"Column '{column}' contains quantitative values "
+                        f"(number of unique values is {num_unique_values} while categorical threshold is {categorical_threshold})"
+                    )
+
         if std:
             df = (df - df.mean()) / df.std(ddof=1)
-            
-
+        
+        if logger:
+            logger._debug("Convert categorical variables in the covariate file into one-hot encoding")
+            logger._debug(f"The maximum number of distinct values that should be considered categorical rather than quantitative: {categorical_threshold}")
+        
         return df.values, all_missing_indvs
+
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Error: The covariate file '{filename}' could not be found.")
+    except IOError as e:
+        raise e
+    except Exception as e:
+        raise e
 
     except FileNotFoundError:
         raise FileNotFoundError(f"Error: The covariate file '{filename}' could not be found.")
