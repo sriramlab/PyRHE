@@ -161,7 +161,7 @@ class RHE:
         self.trace_dir = trace_dir
         if self.get_trace:
             if self.num_bin > 1:
-                raise ValueError("Save trace failed, only supports saving tracing for single bin case.")
+                raise ValueError("Save trace failed.")
         
         # liability scale
         self.samp_prev = samp_prev
@@ -540,7 +540,7 @@ class RHE:
         """
         sigma_ests = []
         if self.get_trace:
-            trace_dict = {}
+            trace_sums = np.zeros((self.num_jack + 1, self.num_bin,  self.num_bin))
 
         for j in range(self.num_jack + 1):
             self.log._debug(f"Estimate for jackknife sample {j}")
@@ -571,6 +571,9 @@ class RHE:
 
                     T[k_k, k_l] /= (self.num_random_vec)
                     T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
+                    if self.get_trace:
+                        trace_sums[j, k_k, k_l] = self._calc_lsum(T[k_k, k_l], self.num_indv, M_k, M_l) if (M_k * M_l) != 0 else 0
+
 
 
             for k in range(self.num_bin):
@@ -594,9 +597,6 @@ class RHE:
             
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
 
-            if self.get_trace:
-                trace_dict[j] = ((T[0][0], self.M[j]))
-
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
             q[self.num_bin] = pheno.T @ pheno 
 
@@ -616,7 +616,7 @@ class RHE:
         sigma_est_jackknife, sigma_ests_total = sigma_ests[:-1, :], sigma_ests[-1, :]
 
         if self.get_trace:
-            self.get_trace_summary(trace_dict)
+            self.get_trace_summary(trace_sums)
             
         return sigma_est_jackknife, sigma_ests_total
 
@@ -767,31 +767,35 @@ class RHE:
 
         return enrichment_jackknife, enrichment_total
     
-    def get_trace_summary(self, trace_dict):
+    @staticmethod
+    def _calc_lsum(tr, n, m1, m2):
+        return (tr - n)*(m1*m2)/pow(n,2)
+    
+    def get_trace_summary(self, trace_sums):
         pheno_path = os.path.basename(self.pheno_file) if self.pheno_file is not None else None
-        trace_filename = f"run_{pheno_path}.trace"
-        mn_filename = f"run_{pheno_path}.MN"
+        trace_filename = f"run_{pheno_path}"
         
         if self.trace_dir and os.path.isdir(self.trace_dir):
-            trace_filepath = os.path.join(self.trace_dir, trace_filename)
-            mn_filepath = os.path.join(self.trace_dir, mn_filename)
+            trace_prefix = os.path.join(self.trace_dir, trace_filename)
         else:
-            trace_filepath = trace_filename
-            mn_filepath = mn_filename
+            trace_prefix = trace_filename
+
+        with open(trace_prefix + ".MN", 'w') as fd:
+            fd.write("NSAMPLE,NSNPS,NBLKS,NBINS,K\n")
+            fd.write(f"{self.num_indv:.0f},{self.num_snp:.0f},{self.num_jack:.0f},{self.num_bin:.0f},{self.num_random_vec:.0f}")
         
-        with open(trace_filepath, 'w') as file:
-            file.write("TRACE,NSNPS_JACKKNIFE\n")
-            for key in sorted(trace_dict.keys()):
-                value = trace_dict[key]
-                line = f"{value[0]:.1f},{int(value[1][0])}\n"
-                file.write(line)
+        with open(trace_prefix + ".tr", 'w') as fd:
+            header_str = ','.join(f'LD_SUM_{i:d}' for i in range(self.num_bin))
+            fd.write(header_str+",NSNPS_JACKKNIFE\n")
+            for j in range(self.num_jack+1):
+                for k in range(self.num_bin):
+                    row_str = ','.join(f'{trace_sums[j,k,l]:.3f}' for l in range(self.num_bin))
+                    row_str += f',{self.M[j, k]:.0f}\n'
+                    fd.write(row_str)
+        self.log._log(f"Saved trace summary into {trace_prefix}(.tr/.MN)")
 
-        mn_content = f"NSAMPLE,NSNPS,NBLKS\n{self.num_indv},{self.num_snp},{self.num_blocks}"
-        with open(mn_filepath, 'w') as file:
-            file.write(mn_content)
-
-        self.log._debug(f"Trace saved to {trace_filepath}")
-        self.log._debug(f"MN data saved to {mn_filepath}")   
+        self.log._debug(f"Trace saved to {trace_prefix}.tr")
+        self.log._debug(f"MN data saved to {trace_prefix}.MN")   
 
     def _compute_liability_h2(self, h2, seh2): 
         # https://gist.github.com/nievergeltlab/fb8a20feded72030907a9b4e81d1c6ea 

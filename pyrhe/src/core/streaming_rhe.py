@@ -83,7 +83,7 @@ class StreamingRHE(RHE):
             self.log._debug(f"jackknife {j} precompute (pass 1) total time: {end_whole-start_whole}")
 
 
-    def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue, trace_dict):
+    def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue, trace_sums):
         sigma_ests = []
         for j in range(start_j, end_j):
             self.log._debug(f"Precompute (pass 2) for jackknife sample {j}")
@@ -136,6 +136,8 @@ class StreamingRHE(RHE):
 
                     T[k_k, k_l] /= (self.num_random_vec)
                     T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
+                    if trace_sums is not None:
+                        trace_sums[j, k_k, k_l] = self._calc_lsum(T[k_k, k_l], self.num_indv, M_k, M_l) if (M_k * M_l) != 0 else 0
 
 
             for k in range(self.num_bin):
@@ -157,9 +159,6 @@ class StreamingRHE(RHE):
                 q[k] = self.yXXy[k][1] / M_k if M_k != 0 else 0
     
             T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
-
-            if trace_dict is not None:
-                trace_dict[j] = ((T[0][0], self.M[j]))
             
             pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
             q[self.num_bin] = pheno.T @ pheno 
@@ -188,9 +187,9 @@ class StreamingRHE(RHE):
         if self.multiprocessing:
             work_ranges = self._distribute_work(self.num_jack + 1, self.num_workers)
             manager = multiprocessing.Manager()
-            trace_dict = manager.dict() if self.get_trace else None
+            trace_sums = manager.dict() if self.get_trace else None
 
-            mp_handler = MultiprocessingHandler(target=self._estimate_worker, work_ranges=work_ranges, device=self.device, trace_dict=trace_dict, method=method, streaming_estimate=True)
+            mp_handler = MultiprocessingHandler(target=self._estimate_worker, work_ranges=work_ranges, device=self.device, trace_sums=trace_sums, method=method, streaming_estimate=True)
             mp_handler.start_processes()
             mp_handler.join_processes()
             results = mp_handler.get_queue()
@@ -199,14 +198,14 @@ class StreamingRHE(RHE):
 
         else:
             self.result_queue = []
-            trace_dict = {} if self.get_trace else None
+            trace_sums = np.zeros((self.num_jack+1, self.num_bin, self.num_bin)) if self.get_trace else None
             for j in tqdm(range(self.num_jack + 1), desc="Estimating..."):
-                self._estimate_worker(0, method, j, j + 1, self.result_queue, trace_dict)
+                self._estimate_worker(0, method, j, j + 1, self.result_queue, trace_sums)
             all_results = self.result_queue
             del self.result_queue
 
         if self.get_trace:
-            self.get_trace_summary(trace_dict)
+            self.get_trace_summary(trace_sums)
 
         # Aggregate results
         sigma_ests = np.array(all_results)
