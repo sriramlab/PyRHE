@@ -21,8 +21,6 @@ class GENIE(Base):
         self.log._log(f"Number of environments: {self.num_env}")
         self.log._log(f"Model: {self.model}")
 
-        print(self.env)
-
 
     def shared_memory(self):
         self.get_num_estimates()
@@ -34,7 +32,6 @@ class GENIE(Base):
                 "M": ((self.num_jack + 1, self.num_estimates), np.int64)
             }
 
-        self.len_bin = self.len_bin
         if self.model == "G":
             self.M_last_row = self.len_bin
         elif self.model == "G+GxE":
@@ -55,7 +52,7 @@ class GENIE(Base):
         else:
             raise ValueError("Unsupported GENIE model type")
 
-    def pre_compute_jackknife_bin(self, j, all_gen, all_gen_original):
+    def pre_compute_jackknife_bin(self, j, all_gen):
         for k, X_kj in enumerate(all_gen): 
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             print(f"k = {k}, M = {self.M[j][k]}")
@@ -71,11 +68,10 @@ class GENIE(Base):
         # GxE
         if self.model == "G+GxE" or self.model == "G+GxE+NxE":
             for e in range(self.num_env):
-                for k, X_kj in enumerate(all_gen_original): 
+                for k, X_kj in enumerate(all_gen): 
                     k = (e + 1) * k + self.num_bin
                     self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
-                    print(f"k = {k}, M = {self.M[j][k]}")
-                    X_kj = X_kj * self.env[e]
+                    X_kj = X_kj * (self.env[:, e]).reshape(-1, 1)
                     for b in range(self.num_random_vec):
                         self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
 
@@ -88,22 +84,11 @@ class GENIE(Base):
                 
         # NxE
         if self.model == "G+GxE+NxE":
-            for k in range(self.num_env):
-                k = k + self.num_bin + self.num_gen_env_bin
-                X_kj = self.env[k] * np.eye(self.num_indv)
-                self.M[j][k] = 1 # No normalization
-                for b in range(self.num_random_vec):
+            for e in range(self.num_env):
+                k = e + self.num_bin + self.num_gen_env_bin
+                self.M[j][k] = 1
 
-                    self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
-
-                    if self.use_cov:
-                        self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                        self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
-                
-                self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
-    
-
-    # TODO: Final Log
+    # TODO: Final Log (Make generic)
         
 
     

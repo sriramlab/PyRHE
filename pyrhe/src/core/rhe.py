@@ -25,7 +25,7 @@ class RHE(Base):
     def get_num_estimates(self):
         self.num_estimates = self.num_bin
 
-    def pre_compute_jackknife_bin(self, j, all_gen, all_gen_original): # TODO: improve
+    def pre_compute_jackknife_bin(self, j, all_gen):
         for k, X_kj in enumerate(all_gen): 
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             for b in range(self.num_random_vec):

@@ -431,7 +431,7 @@ class Base(ABC):
     
     
     @abstractmethod
-    def pre_compute_jackknife_bin(self, j, k, X_kj):
+    def pre_compute_jackknife_bin(self, j, all_gen):
         pass
     
     @abstractmethod
@@ -440,23 +440,36 @@ class Base(ABC):
     
     def aggregate(self):
         for k in range(self.num_estimates):
-            for j in range(self.num_jack):
-                for b in range (self.num_random_vec):
-                    self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
-                self.yXXy[k][self.num_jack] += self.yXXy[k][j]
-            
+            if k < self.num_bin + self.num_gen_env_bin: 
+                for j in range(self.num_jack):
+                    for b in range (self.num_random_vec):
+                        self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
+                    self.yXXy[k][self.num_jack] += self.yXXy[k][j]
+            else: # hetero noise
+                e = self.num_estimates - k - self.num_bin - self.num_gen_env_bin + 1
+                X_kj = np.eye(self.num_indv) * (self.env[:, e]).reshape(-1, 1)
+                for b in range(self.num_random_vec):
+                    self.XXz[k][self.num_jack][b] = self._compute_XXz(b, X_kj)
+                self.yXXy[k][self.num_jack] = self._compute_yXXy(X_kj, y=self.pheno)
+
+                if self.use_cov:
+                    self.UXXz[k][self.num_jack][b] = self._compute_UXXz(self.XXz[k][self.num_jack][b])
+                    self.XXUz[k][self.num_jack][b] = self._compute_XXUz(b, X_kj)
+
             for j in range(self.num_jack):
                 for b in range (self.num_random_vec):
                     self.XXz[k][j][b] = self.XXz[k][self.num_jack][b] - self.XXz[k][j][b]
                 self.yXXy[k][j] = self.yXXy[k][self.num_jack] - self.yXXy[k][j]
-        
+            
         if self.use_cov:
-            for k in range(self.num_estimates):
-                for j in range(self.num_jack):
-                    for b in range (self.num_random_vec):
-                        self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
-                        self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
-                                        
+            for k in range(self.num_estimates): 
+                if k < self.num_bin + self.num_gen_env_bin: # non hetero noise
+                    for j in range(self.num_jack):
+                        for b in range (self.num_random_vec):
+                            self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
+                            self.XXUz[k][self.num_jack][b] += self.XXUz[k][j][b]
+                # hetero noise case is already calculated in line 455
+                                      
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
                         self.UXXz[k][j][b] = self.UXXz[k][self.num_jack][b] - self.UXXz[k][j][b]
@@ -475,18 +488,18 @@ class Base(ABC):
 
                 subsample, sub_annot = self._get_jacknife_subsample(j)
 
-                start = time.time()
+                # start = time.time()
                 # subsample is standardized
                 subsample, subsample_original = self.impute_geno(subsample, simulate_geno=True)
 
                 assert subsample.shape[0] == self.num_indv
 
-                end = time.time()
+                # end = time.time()
                 # self.log._debug(f"impute time: {end - start}")
                 all_gen = self.partition_bins(subsample, sub_annot)
                 all_gen_original = self.partition_bins(subsample_original, sub_annot)
 
-                self.pre_compute_jackknife_bin(j, all_gen, all_gen_original) # TODO: improve
+                self.pre_compute_jackknife_bin(j, all_gen)
                     
                 end_whole = time.time()
                 self.log._debug(f"jackknife {j} precompute total time: {end_whole - start_whole}")
@@ -566,10 +579,15 @@ class Base(ABC):
 
         for k in range(self.num_estimates):
             M_k = self.M[j][k]
+            b_trk = self.num_indv # Shortcut for trace calculation: tr(K) = N (Page 8 of the paper)
+            if k >= self.num_bin:
+                # Trace calculation
+                B1 = self.XXz[k][j]
+                b_trk = np.sum(B1 * self.all_zb.T) / (self.num_random_vec * M_k)
 
             if not self.use_cov:
-                T[k, self.num_estimates] = self.num_indv
-                T[self.num_estimates, k] = self.num_indv
+                T[k, self.num_estimates] = b_trk
+                T[self.num_estimates, k] = b_trk
 
             else:
                 B1 = self.XXz[k][j]
@@ -577,8 +595,8 @@ class Base(ABC):
                 tk_res = np.sum(B1 * C1.T)
                 tk_res = 1/(self.num_random_vec * M_k) * tk_res
 
-                T[k, self.num_estimates] = self.num_indv - tk_res
-                T[self.num_estimates, k] = self.num_indv - tk_res
+                T[k, self.num_estimates] = b_trk - tk_res
+                T[self.num_estimates, k] = b_trk - tk_res
 
             q[k] = self.yXXy[(k, j)] / M_k if M_k != 0 else 0
         
