@@ -23,8 +23,7 @@ class RHE(Base):
         self.M_last_row = self.len_bin
     
     def get_num_estimates(self):
-        self.num_estimates = self.num_bin
-
+        self.num_estimates = self.num_bin        
     def pre_compute_jackknife_bin(self, j, all_gen):
         for k, X_kj in enumerate(all_gen): 
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]

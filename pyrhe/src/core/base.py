@@ -46,7 +46,8 @@ class Base(ABC):
         log: Optional[Logger] = None
     ):
 
-        self.num_jack = num_jack
+        # TODO: Use annot to determine num_bin instead of passing in num_bin or do some checking
+        self.num_jack = num_jack # TODO: Checking num jack > 0
         self.num_blocks = num_jack
         self.num_random_vec = num_random_vec
         self.num_bin = num_bin if annot_file is None else None
@@ -188,6 +189,8 @@ class Base(ABC):
         self.pheno_cp = self.pheno.copy()
 
         self.num_estimates = None
+
+        self.num_gen_env_bin = 0
   
     
     def _init_device(self, device, cuda_num):
@@ -358,9 +361,7 @@ class Base(ABC):
         end = start + chunk_size
 
          # read bed file
-        start_time = time.time()
         subsample = self.read_geno(start, end)
-        end_time = time.time()
         # self.log._debug(f"read geno time: {end_time - start_time}")
 
         sub_annot = self.annot_matrix[start:end]
@@ -630,7 +631,11 @@ class Base(ABC):
         for j in range(self.num_jack + 1):
             self.log._debug(f"Estimate for jackknife sample {j}")
 
-            T, q = self.setup_lhs_rhs_jackknife(j)
+            if self.num_jack == 1 and j == 0:
+                T, q = self.setup_lhs_rhs_jackknife(1)
+            
+            else:
+                T, q = self.setup_lhs_rhs_jackknife(j)
 
             if self.get_trace:
                 trace_dict[j] = ((T[0][0], self.M[j]))
