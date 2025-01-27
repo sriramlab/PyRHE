@@ -1,16 +1,14 @@
 import multiprocessing
 import signal
 import sys
-import time
 from tqdm import tqdm
-import torch
 
 class MultiprocessingHandler:
-    def __init__(self, target, work_ranges, device, trace_dict=None, method=None, streaming_estimate=False):
+    def __init__(self, target, work_ranges, device, trace_sums=None, method=None, streaming_estimate=False):
         self.target = target
         self.work_ranges = work_ranges
         self.device = device
-        self.trace_dict = trace_dict
+        self.trace_sums = trace_sums
         self.method = method
         self.streaming_estimate = streaming_estimate
         self.processes = []
@@ -34,7 +32,7 @@ class MultiprocessingHandler:
             if not self.streaming_estimate:
                 p = multiprocessing.Process(target=self.target, args=(worker_num, start_j, end_j))
             else:
-                p = multiprocessing.Process(target=self.target, args=(worker_num, self.method, start_j, end_j, self.result_queue, self.trace_dict))
+                p = multiprocessing.Process(target=self.target, args=(worker_num, self.method, start_j, end_j, self.result_queue, self.trace_sums))
             self.processes.append(p)
             p.start()
 

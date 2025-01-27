@@ -56,12 +56,64 @@ class StreamingBase(Base):
     def pre_compute_jackknife_bin_pass_2(self, j, k, X_kj):
         pass
     
-    @abstractmethod
-    def setup_lhs_rhs_jackknife(self, j):
-        pass
+    def setup_lhs_rhs_jackknife(self, j, trace_sums):
+        T = np.zeros((self.num_bin+1, self.num_bin+1))
+        q = np.zeros((self.num_bin+1, 1))
+
+        for k_k in range(self.num_bin):
+            for k_l in range(self.num_bin): 
+                M_k = self.M[j][k_k]
+                M_l = self.M[j][k_l]
+                B1 = self.XXz[k_k][1]
+                B2 = self.XXz[k_l][1]
+                T[k_k, k_l] += np.sum(B1 * B2)
+
+                if self.use_cov:
+                    h1 = self.cov_matrix.T @ B1.T
+                    h2 = self.Q @ h1
+                    h3 = self.cov_matrix @ h2
+                    trkij_res1 = np.sum(h3.T * B2)
+
+                    B1 = self.XXUz[k_k][1]
+                    B2 = self.UXXz[k_l][1]
+                    trkij_res2 = np.sum(B1 * B2)
+                
+                    T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
 
 
-    def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue, trace_dict):
+                T[k_k, k_l] /= (self.num_random_vec)
+                T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
+                if trace_sums is not None:
+                    trace_sums[j, k_k, k_l] = self._calc_lsum(T[k_k, k_l], self.num_indv, M_k, M_l) if (M_k * M_l) != 0 else 0
+
+
+
+        for k in range(self.num_bin):
+            M_k = self.M[j][k]
+
+            if not self.use_cov:
+                T[k, self.num_bin] = self.num_indv
+                T[self.num_bin, k] = self.num_indv
+
+            else:
+                B1 = self.XXz[k][1]
+                C1 = self.all_Uzb
+                tk_res = np.sum(B1 * C1.T)
+                tk_res = 1/(self.num_random_vec * M_k) * tk_res
+
+                T[k, self.num_bin] = self.num_indv - tk_res
+                T[self.num_bin, k] = self.num_indv - tk_res
+
+            q[k] = self.yXXy[k][1] / M_k if M_k != 0 else 0
+
+        T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
+
+        pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
+        q[self.num_bin] = pheno.T @ pheno 
+
+        return T,q
+
+    def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue, trace_sum):
         sigma_ests = []
         for j in range(start_j, end_j):
             self.log._debug(f"Precompute (pass 2) for jackknife sample {j}")
@@ -78,10 +130,10 @@ class StreamingBase(Base):
 
             self.log._debug(f"Estimate for jackknife sample {j}")
             
-            T, q = self.setup_lhs_rhs_jackknife(j)
+            T, q = self.setup_lhs_rhs_jackknife(j, trace_sum)
 
             if self.get_trace:
-                trace_dict[j] = ((T[0][0], self.M[j]))
+                trace_sum[j] = ((T[0][0], self.M[j]))
         
             if method == "lstsq":
                 sigma_est = self.solve_linear_equation(T,q)
@@ -107,9 +159,9 @@ class StreamingBase(Base):
         if self.multiprocessing:
             work_ranges = self._distribute_work(self.num_jack + 1, self.num_workers)
             manager = multiprocessing.Manager()
-            trace_dict = manager.dict() if self.get_trace else None
+            trace_sums = manager.dict() if self.get_trace else None
 
-            mp_handler = MultiprocessingHandler(target=self._estimate_worker, work_ranges=work_ranges, device=self.device, trace_dict=trace_dict, method=method, streaming_estimate=True)
+            mp_handler = MultiprocessingHandler(target=self._estimate_worker, work_ranges=work_ranges, device=self.device, trace_sums=trace_sums, method=method, streaming_estimate=True)            
             mp_handler.start_processes()
             mp_handler.join_processes()
             results = mp_handler.get_queue()
@@ -118,14 +170,14 @@ class StreamingBase(Base):
 
         else:
             self.result_queue = []
-            trace_dict = {} if self.get_trace else None
+            trace_sums = np.zeros((self.num_jack+1, self.num_bin, self.num_bin)) if self.get_trace else None
             for j in tqdm(range(self.num_jack + 1), desc="Estimating..."):
-                self._estimate_worker(0, method, j, j + 1, self.result_queue, trace_dict)
+                self._estimate_worker(0, method, j, j + 1, self.result_queue, trace_sums)
             all_results = self.result_queue
             del self.result_queue
 
         if self.get_trace:
-            self.get_trace_summary(trace_dict)
+            self.get_trace_summary(trace_sums)
 
         # Aggregate results
         sigma_ests = np.array(all_results)
