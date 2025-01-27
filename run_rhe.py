@@ -115,18 +115,14 @@ def main(args):
 
     for trait in range(rhe.num_traits):
         start = time.time()
-        sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, _, _, _, _ = rhe(trait=trait)
+        res_dict = rhe(trait=trait)
         end = time.time()
 
         runtime = end - start
 
         results[f"Trait{trait}"] = {
-            "sigma_ests_total": sigma_ests_total,
-            "sig_errs": sig_errs,
-            "h2_total": h2_total,
-            "h2_errs": h2_errs,
-            "enrichment_total": enrichment_total,
-            "enrichment_errs": enrichment_errs,
+            **res_dict,
+            "runtime": runtime
         }
 
     log._save_log()

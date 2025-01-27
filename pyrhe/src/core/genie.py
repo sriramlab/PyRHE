@@ -87,14 +87,36 @@ class GENIE(Base):
             for e in range(self.num_env):
                 k = e + self.num_bin + self.num_gen_env_bin
                 self.M[j][k] = 1
-
-    # TODO: Final Log (Make generic)
         
-
     
+    def run(self, method):
+        sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
+        sig_errs = self.estimate_error(sigma_est_jackknife)
 
-        
+        self.log._log("Variance components: ")
 
-    
-    
 
+        for i, est in enumerate(sigma_ests_total):
+            if self.model == "G":
+                self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
+
+            elif self.model == "G+GxE":
+                if i < self.num_bin:
+                    self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
+                else:
+                    self.log._log(f"Sigma^2_gxe[{i - self.num_bin}] : {est}  SE : {sig_errs[i]}")
+
+            elif self.model == "G+GxE+NxE":
+                if i < self.num_bin:
+                    self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
+                elif i < self.num_bin + self.num_gen_env_bin:
+                    self.log._log(f"Sigma^2_gxe[{i - self.num_bin}] : {est}  SE : {sig_errs[i]}")
+                elif i < self.num_bin + self.num_gen_env_bin + self.num_env:
+                    self.log._log(f"Sigma^2_nxe[{i - self.num_bin - self.num_gen_env_bin}] : {est}  SE : {sig_errs[i]}")
+
+        self.log._log(f"Sigma^2_e : {sigma_ests_total[-1]}  SE : {sig_errs[-1]}")
+
+        return {
+            "sigma_ests_total": sigma_ests_total,
+            "sig_errs": sig_errs,
+        }

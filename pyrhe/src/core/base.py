@@ -846,79 +846,23 @@ class Base(ABC):
 
         return h2_liab, var_h2_liab**0.5, p_liab
 
+    @abstractmethod
+    def run(self, method):
+        pass
+
     def __call__(self, trait, method: str = "QR"):
         
         self.pheno = self.pheno_cp[:, trait].reshape(-1, 1)
         self.log._log("*****")
         self.log._log(f"OUTPUT FOR TRAIT {trait}: ")
         self.pre_compute()
+        res_dict = self.run(method=method)
 
-        sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
-        sig_errs = self.estimate_error(sigma_est_jackknife)
-
-        self.log._log("Variance components: ")
-        for i, est in enumerate(sigma_ests_total):
-            if i == len(sigma_ests_total) - 1:
-                self.log._log(f"Sigma^2_e : {est}  SE : {sig_errs[i]}")
-            else:
-                self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
-        
-        h2_jackknife, h2_total = self.compute_h2_nonoverlapping(sigma_est_jackknife, sigma_ests_total)
-        h2_errs = self.estimate_error(h2_jackknife)
-
-        self.log._log("*****")
-        self.log._log("Heritabilities:")
-        for i, est_h2 in enumerate(h2_total):
-            if i == len(h2_total) - 1:
-                self.log._log(f"Total h2 : {est_h2} SE: {h2_errs[i]}")
-            else:
-                self.log._log(f"h2_g[{i}] : {est_h2} : {h2_errs[i]}")
-
-        self.log._log("*****")
-        self.log._log("Enrichments: ")
-
-        enrichment_jackknife, enrichment_total = self.compute_enrichment(h2_jackknife, h2_total)
-        enrichment_errs = self.estimate_error(enrichment_jackknife)
-
-        for i, est_enrichment in enumerate(enrichment_total):
-            self.log._log(f"Enrichment g[{i}] : {est_enrichment} SE : {enrichment_errs[i]}")
-
-        self.log._log("*****\n*****\nHeritabilities and enrichments computed based on overlapping setting")
-
-        h2_jackknife_overlap, h2_total_overlap = self.compute_h2_overlapping(sigma_est_jackknife, sigma_ests_total)
-        h2_errs_overlap = self.estimate_error(h2_jackknife_overlap)
-
-        self.log._log("Heritabilities:")
-        for i, est_h2 in enumerate(h2_total_overlap):
-            if i == len(h2_total) - 1:
-                self.log._log(f"Total h2 : {est_h2} SE: {h2_errs_overlap[i]}")
-            else:
-                self.log._log(f"h2_g[{i}] : {est_h2} : {h2_errs_overlap[i]}")
-        
-        self.log._log("Enrichments (overlapping def):")
-        enrichment_jackknife_overlap, enrichment_total_overlap = self.compute_enrichment(h2_jackknife_overlap, h2_total_overlap)
-        enrichment_errs_overlap = self.estimate_error(enrichment_jackknife_overlap)
-
-        for i, est_enrichment in enumerate(enrichment_total_overlap):
-            self.log._log(f"Enrichment g[{i}] : {est_enrichment} SE : {enrichment_errs_overlap[i]}")
-
-
-        if self.binary_pheno:
-            self.log._log("*****")
-            self.log._log("Liability Scale h2 for binary phenotype:")
-            for i, est_h2 in enumerate(h2_total):
-                if i == len(h2_total) - 1:
-                    output = self.calculate_liability_h2(h2_total, h2_errs)
-                    self.log._log(f"Total Liability-scale h2 : {output[0]}, SE: {output[1]}, p-value: {output[2]}")
-                else:
-                    output = self.calculate_liability_h2(est_h2, h2_errs[i])
-                    self.log._log(f"Liability-scale h2_g[{i}] : {output[0]}, SE: {output[1]}, p-value: {output[2]}")
-        
         if trait < self.num_traits - 1:
             self._finalize()
-
-        return sigma_ests_total, sig_errs, h2_total, h2_errs, enrichment_total, enrichment_errs, h2_total_overlap, h2_errs_overlap, enrichment_total_overlap, enrichment_errs_overlap
     
+
+        return res_dict
 
     ############################ Other Functionalities #########################################
 
