@@ -1,0 +1,48 @@
+##################################
+#                                #
+#          PyRHE (v1.0.0)        #
+#                                #
+##################################
+
+
+Active essential options:
+	-g (genotype) test
+	-annot (annotation) single.annot
+	-p (phenotype) test.pheno
+	-c (covariates) test.cov
+	-o (output) test_rhe.out
+	-k (# random vectors) 10
+	-jn (# jackknife blocks) 100
+	--num_workers 5
+	--device cpu
+	--geno_impute_method binary
+	--cov_impute_method ignore
+
+
+Number of traits: 1
+Rank of the covariate matrix: 5
+Number of individuals after filtering: 5000
+Number of covariates: 5
+*****
+Number of features in bin 0 : 10000
+*****
+OUTPUT FOR TRAIT 0: 
+Saved trace summary into run_test.pheno(.tr/.MN)
+Variance components: 
+Sigma^2_g[0] : 0.1624126701535564  SE : 0.030938069418355984
+Sigma^2_e : 0.7969651882406265  SE : 0.030947296280538408
+*****
+Heritabilities:
+h2_g[0] : 0.16928957525182464 : 0.03224962395100306
+Total h2 : 0.16928957525182464 SE: 0.03224962395100306
+*****
+Enrichments: 
+Enrichment g[0] : 1.0 SE : 0.0
+*****
+*****
+Heritabilities and enrichments computed based on overlapping setting
+Heritabilities:
+h2_g[0] : 0.1692895752518136 : 0.032249623950990576
+Total h2 : 0.16928957525182464 SE: 0.03224962395100306
+Enrichments (overlapping def):
+Enrichment g[0] : 0.9999999999999347 SE : 1.1673354718914405e-12

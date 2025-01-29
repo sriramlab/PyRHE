@@ -20,12 +20,10 @@ generated_annot
 
 *.json
 *.pkl
-*.MN
-*.trace
 
 .env
 test_small_sample.py
 
 
-# !example/**/*
-/example
+!example/**/*
+# /example

@@ -629,7 +629,9 @@ class Base(ABC):
         """
         sigma_ests = []
         if self.get_trace:
-            trace_sums = np.zeros((self.num_jack + 1, self.num_bin, self.num_bin))
+            trace_sums = np.zeros((self.num_jack + 1, self.num_estimates, self.num_estimates))
+        else:
+            trace_sums = None
 
         for j in range(self.num_jack + 1):
             self.log._debug(f"Estimate for jackknife sample {j}")
