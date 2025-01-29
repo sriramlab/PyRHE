@@ -111,7 +111,3 @@ class RHE(Base):
             "enrichment_total_overlap": enrichment_total_overlap,
             "enrichment_errs_overlap": enrichment_errs_overlap
         }
-
-
-    
-    
