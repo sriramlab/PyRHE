@@ -1,36 +1,41 @@
 import numpy as np
 from . import StreamingBase
+from . import RHE
 
 
-class StreamingRHE(StreamingBase):
+class StreamingRHE(RHE, StreamingBase):
     def __init__(
         self,
         **kwargs
     ):
         super().__init__(**kwargs) 
-
-    def shared_memory(self):
-        self.shared_memory_arrays = {
-            "XXz": ((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
-            "yXXy": ((self.num_bin, self.num_workers), np.float64),
-            "UXXz": ((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
-            "XXUz": ((self.num_bin, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
-        }
     
-    def pre_compute_jackknife_bin(self, j, k, X_kj, worker_num):
-        self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
-        for b in range(self.num_random_vec):
-            XXz_kjb = self._compute_XXz(b, X_kj)
-            self.XXz[k][worker_num][b] += XXz_kjb
+    def shared_memory(self):
+        self.get_num_estimates()
+        self.shared_memory_arrays = {
+            "XXz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+            "yXXy": ((self.num_estimates, self.num_workers), np.float64),
+            "UXXz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+            "XXUz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+            "M": ((self.num_jack + 1, self.num_estimates), np.int64)
+        }
+        self.M_last_row = self.len_bin
+    
+    def pre_compute_jackknife_bin(self, j, all_gen, worker_num):
+        for k, X_kj in enumerate(all_gen): 
+            self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
+            for b in range(self.num_random_vec):
+                XXz_kjb = self._compute_XXz(b, X_kj)
+                self.XXz[k][worker_num][b] += XXz_kjb
 
-            if self.use_cov:
-                UXXz_kjb = self._compute_UXXz(XXz_kjb)
-                XXUz_kjb = self._compute_XXUz(b, X_kj)
-                self.UXXz[k][worker_num][b] += UXXz_kjb
-                self.XXUz[k][worker_num][b] += XXUz_kjb
-                
-        yXXy_kj = self._compute_yXXy(X_kj, y=self.pheno)
-        self.yXXy[k][worker_num] += yXXy_kj[0][0]
+                if self.use_cov:
+                    UXXz_kjb = self._compute_UXXz(XXz_kjb)
+                    XXUz_kjb = self._compute_XXUz(b, X_kj)
+                    self.UXXz[k][worker_num][b] += UXXz_kjb
+                    self.XXUz[k][worker_num][b] += XXUz_kjb
+                    
+            yXXy_kj = self._compute_yXXy(X_kj, y=self.pheno)
+            self.yXXy[k][worker_num] += yXXy_kj[0][0]
     
 
         del X_kj

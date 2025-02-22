@@ -1,8 +1,7 @@
 import time
 import numpy as np
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 import multiprocessing
-from typing import Optional
 from tqdm import tqdm
 from typing import List, Tuple
 
@@ -10,7 +9,6 @@ from typing import List, Tuple
 from . import Base
 from pyrhe.src.core.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.types import *
-from pyrhe.src.util.logger import Logger
 
 
 class StreamingBase(Base):
@@ -44,10 +42,7 @@ class StreamingBase(Base):
             else:
                 self.total_num_sample = subsample.shape[0]
             all_gen = self.partition_bins(subsample, sub_annot)
-
-            for k, X_kj in enumerate(all_gen):
-                self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
-                self.pre_compute_jackknife_bin(j, k, X_kj, worker_num)
+            self.pre_compute_jackknife_bin(j, all_gen, worker_num)
                 
             end_whole = time.time()
             self.log._debug(f"jackknife {j} precompute (pass 1) total time: {end_whole-start_whole}")

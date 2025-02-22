@@ -1,24 +1,11 @@
 #!/bin/bash
 
-MODEL="genie"
 
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --model)
-        shift
-        MODEL="$1"
-        shift
-        ;;
-        *)
-        shift
-        ;;
-    esac
-done
-
-CONFIG_FILE="./${MODEL}_config.txt"
-
-if [ ! -f "$CONFIG_FILE" ]; then
-    echo "Config file for model '$MODEL' not found: $CONFIG_FILE"
+# Check if the first argument is "--config" and if a second argument exists.
+if [ "$1" = "--config" ] && [ -n "$2" ]; then
+    CONFIG_FILE="$2"
+else
+    echo "Usage: $0 --config <path_to_config_file>"
     exit 1
 fi
 

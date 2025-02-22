@@ -11,10 +11,12 @@ class Logger:
         if self.debug_mode:
             print(msg)
 
-    def _log(self, msg, end="\n"):
-        self.msgs.append(msg + end)
+    def _log(self, *args, end="\n"):
+        combined_msg = " ".join(str(arg) for arg in args)
+        self.msgs.append(combined_msg + end)
         if not self.suppress:
-            print(msg)
+            print(combined_msg, end=end)
+
 
     def _save_log(self):
         if self.output_file is not None:

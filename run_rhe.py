@@ -1,10 +1,9 @@
 import argparse
 import os
 import numpy as np
-from pyrhe.src.core import RHE, StreamingRHE, GENIE
+from pyrhe.src.core import RHE, StreamingRHE, GENIE, StreamingGENIE
 from pyrhe.src.util import Logger
-from constant import DATA_DIR, RESULT_DIR
-import json
+from constant import DATA_DIR
 import time
 import configparser
 
@@ -108,7 +107,10 @@ def main(args):
     elif args.model == "genie":
         params['env_file'] = args.env
         params['model'] = args.genie_model
-        rhe = GENIE(**params)
+        if args.streaming:
+            rhe = StreamingGENIE(**params)
+        else:
+            rhe = GENIE(**params)
 
     else:
         raise ValueError("Unsupported Model")
@@ -125,6 +127,8 @@ def main(args):
             "runtime": runtime
         }
 
+
+    log._log("Runtime: ", runtime)
     log._save_log()
 
 

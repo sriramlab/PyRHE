@@ -1,17 +1,16 @@
 [PyRHE_Config]
 genotype = test
 phenotype = test.pheno
-annotation=single.annot
+annotation=multi.annot # TODO: Change
 covariate=test.cov
 cov_one_hot_conversion = yes
-output=test_rhe.out
+output=outputs/rhe/no_streaming_bin_8.txt
 num_vec = 10
-num_bin =  1
+num_bin =  8
 num_workers = 5
 num_block = 100
 streaming = no
 debug = yes
-get_trace = yes
 benchmark_runtime = no
 geno_impute_method = binary
 cov_impute_method = ignore

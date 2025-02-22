@@ -10,8 +10,8 @@ Active essential options:
 	-annot (annotation) single.annot
 	-p (phenotype) test.pheno
 	-c (covariates) test.cov
-	-o (output) test_rhe.out
-	-k (# random vectors) 10
+	-o (output) outputs/genie/no_streaming_bin_1.txt
+	-k (# random vectors) 20
 	-jn (# jackknife blocks) 100
 	--num_workers 5
 	--device cpu
@@ -25,24 +25,14 @@ Number of individuals after filtering: 5000
 Number of covariates: 5
 *****
 Number of features in bin 0 : 10000
+Number of environments: 1
+Model: G+GxE+NxE
 *****
 OUTPUT FOR TRAIT 0: 
 Saved trace summary into run_test.pheno(.tr/.MN)
 Variance components: 
-Sigma^2_g[0] : 0.1624126701535564  SE : 0.030938069418355984
-Sigma^2_e : 0.7969651882406265  SE : 0.030947296280538408
-*****
-Heritabilities:
-h2_g[0] : 0.16928957525182464 : 0.03224962395100306
-Total h2 : 0.16928957525182464 SE: 0.03224962395100306
-*****
-Enrichments: 
-Enrichment g[0] : 1.0 SE : 0.0
-*****
-*****
-Heritabilities and enrichments computed based on overlapping setting
-Heritabilities:
-h2_g[0] : 0.1692895752518136 : 0.032249623950990576
-Total h2 : 0.16928957525182464 SE: 0.03224962395100306
-Enrichments (overlapping def):
-Enrichment g[0] : 0.9999999999999347 SE : 1.1673354718914405e-12
+Sigma^2_g[0] : 0.12410478367969471  SE : 0.03251294913984004
+Sigma^2_gxe[0] : 0.26624926936700477  SE : 0.09731813786515173
+Sigma^2_nxe[0] : 0.14272447316930062  SE : 0.09675041860734424
+Sigma^2_e : 0.6757598667223347  SE : 0.03268802354833435
+Runtime:  7.353059530258179

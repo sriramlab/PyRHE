@@ -293,7 +293,7 @@ class Base(ABC):
 
         X_imp_standardized = (X_imp - means) * stds
               
-        return X_imp_standardized, X_imp
+        return X_imp_standardized
 
     def solve_linear_equation(self, X, y):
         '''
@@ -491,15 +491,14 @@ class Base(ABC):
 
                 # start = time.time()
                 # subsample is standardized
-                subsample, subsample_original = self.impute_geno(subsample, simulate_geno=True)
+                subsample = self.impute_geno(subsample, simulate_geno=True)
 
                 assert subsample.shape[0] == self.num_indv
 
                 # end = time.time()
                 # self.log._debug(f"impute time: {end - start}")
                 all_gen = self.partition_bins(subsample, sub_annot)
-                all_gen_original = self.partition_bins(subsample_original, sub_annot)
-
+                
                 self.pre_compute_jackknife_bin(j, all_gen)
                     
                 end_whole = time.time()

@@ -1,0 +1,19 @@
+[PyRHE_Config]
+model = genie
+genie_model = G+GxE+NxE
+genotype = test
+phenotype = test.pheno
+annotation=single.annot
+covariate=test.cov
+env=test.env
+output=outputs/genie/no_streaming_bin_1.txt
+num_vec = 20
+num_bin = 1
+num_workers = 5
+num_block = 100
+streaming = no
+debug = yes
+benchmark_runtime = no
+geno_impute_method = binary
+cov_impute_method = ignore
+trace = yes
