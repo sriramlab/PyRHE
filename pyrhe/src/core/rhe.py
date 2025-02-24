@@ -13,12 +13,15 @@ class RHE(Base):
     def shared_memory(self):
         self.get_num_estimates()
         self.shared_memory_arrays = {
-                "XXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "yXXy": ((self.num_estimates, self.num_jack + 1), np.float64),
+            "XXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+            "yXXy": ((self.num_estimates, self.num_jack + 1), np.float64),
+            "M": ((self.num_jack + 1, self.num_estimates), np.int64)
+        }
+        if self.use_cov:
+            self.shared_memory_arrays.update({
                 "UXXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
                 "XXUz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "M": ((self.num_jack + 1, self.num_estimates), np.int64)
-            }
+            })
         
         self.M_last_row = self.len_bin
     

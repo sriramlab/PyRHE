@@ -1,0 +1,38 @@
+##################################
+#                                #
+#          PyRHE (v1.0.0)        #
+#                                #
+##################################
+
+
+Active essential options:
+	-g (genotype) test
+	-annot (annotation) single.annot
+	-p (phenotype) test.pheno
+	-c (covariates) test.cov
+	-o (output) outputs/genie/streaming_bin_1.txt
+	-k (# random vectors) 20
+	-jn (# jackknife blocks) 100
+	--num_workers 5
+	--device cpu
+	--geno_impute_method binary
+	--cov_impute_method ignore
+
+
+Number of traits: 1
+Rank of the covariate matrix: 5
+Number of individuals after filtering: 5000
+Number of covariates: 5
+*****
+Number of features in bin 0 : 10000
+Number of environments: 1
+Model: G+GxE+NxE
+*****
+OUTPUT FOR TRAIT 0: 
+Saved trace summary into run_test.pheno(.tr/.MN)
+Variance components: 
+Sigma^2_g[0] : 0.12237759147742  SE : 0.04801617093153092
+Sigma^2_gxe[0] : 0.24257618122777874  SE : 0.12398151010123575
+Sigma^2_nxe[0] : 0.14809057382879764  SE : 0.1251204537993922
+Sigma^2_e : 0.6827860556975138  SE : 0.04835975207193742
+Runtime:  2.677903175354004

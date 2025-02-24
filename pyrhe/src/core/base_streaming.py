@@ -4,11 +4,10 @@ from abc import abstractmethod
 import multiprocessing
 from tqdm import tqdm
 from typing import List, Tuple
-
-
 from . import Base
 from pyrhe.src.core.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.types import *
+from pyrhe.src.util.mat_mul import *
 
 
 class StreamingBase(Base):
@@ -18,9 +17,47 @@ class StreamingBase(Base):
     ):
         super().__init__(**kwargs) 
     
-    @abstractmethod
+    
     def aggregate(self):
-        pass
+        # [k][0][b] stores the sum
+        if self.multiprocessing:
+            for k in range(self.num_estimates):
+                if k < self.num_bin + self.num_gen_env_bin: # The hetero noise does not have to be calculated in this way
+                    self.yXXy_per_jack[k][0] = np.sum(self.yXXy[k, :])
+                    for b in range(self.num_random_vec):
+                        self.XXz_per_jack[k, 0, b, :] = np.sum(self.XXz[k, :, b, :], axis=0)
+                        if self.UXXz_per_jack is not None: 
+                            self.UXXz_per_jack[k, 0, b, :] = np.sum(self.UXXz[k, :, b, :], axis=0) 
+                        if self.XXUz_per_jack is not None:
+                            self.XXUz_per_jack[k, 0, b, :] = np.sum(self.XXUz[k, :, b, :], axis=0)
+            
+            self.XXz = self.XXz_per_jack
+            self.yXXy = self.yXXy_per_jack 
+            self.UXXz = self.UXXz_per_jack
+            self.XXUz = self.XXUz_per_jack
+        
+            del self.XXz_per_jack
+            del self.yXXy_per_jack 
+            del self.UXXz_per_jack
+            del self.XXUz_per_jack
+
+        # Only a single calculation for the hetero noise. No need to aggregate across the workers.  
+        if hasattr(self, 'num_env'):
+            for e in range(self.num_env):
+                k = e + self.num_bin + self.num_gen_env_bin
+                X_kj = elem_mul(np.eye(self.num_indv), self.env[:, e].reshape(-1, 1), device=self.device)
+                for b in range(self.num_random_vec):
+                    self.XXz[k][0][b] = self._compute_XXz(b, X_kj)
+                    self.XXz[k][1][b] = self.XXz[k][0][b] # No need to do the jackknife sampling for the hetero noise. 
+                self.yXXy[k][0] = self._compute_yXXy(X_kj, y=self.pheno)
+                self.yXXy[k][1] = self.yXXy[k][0]
+
+                if self.use_cov:
+                    self.UXXz[k][0][b] = self._compute_UXXz(self.XXz[k][0][b])
+                    self.UXXz[k][1][b] = self.UXXz[k][0][b]
+                    self.XXUz[k][0][b] = self._compute_XXUz(b, X_kj)
+                    self.XXUz[k][1][b] = self.XXUz[k][0][b]
+
     
     @abstractmethod
     def shared_memory(self):
@@ -50,63 +87,6 @@ class StreamingBase(Base):
     @abstractmethod
     def pre_compute_jackknife_bin_pass_2(self, j, k, X_kj):
         pass
-    
-    def setup_lhs_rhs_jackknife(self, j, trace_sums):
-        T = np.zeros((self.num_bin+1, self.num_bin+1))
-        q = np.zeros((self.num_bin+1, 1))
-
-        for k_k in range(self.num_bin):
-            for k_l in range(self.num_bin): 
-                M_k = self.M[j][k_k]
-                M_l = self.M[j][k_l]
-                B1 = self.XXz[k_k][1]
-                B2 = self.XXz[k_l][1]
-                T[k_k, k_l] += np.sum(B1 * B2)
-
-                if self.use_cov:
-                    h1 = self.cov_matrix.T @ B1.T
-                    h2 = self.Q @ h1
-                    h3 = self.cov_matrix @ h2
-                    trkij_res1 = np.sum(h3.T * B2)
-
-                    B1 = self.XXUz[k_k][1]
-                    B2 = self.UXXz[k_l][1]
-                    trkij_res2 = np.sum(B1 * B2)
-                
-                    T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
-
-
-                T[k_k, k_l] /= (self.num_random_vec)
-                T[k_k, k_l] =  T[k_k, k_l] / (M_k * M_l) if (M_k * M_l) != 0 else 0
-                if trace_sums is not None:
-                    trace_sums[j, k_k, k_l] = self._calc_lsum(T[k_k, k_l], self.num_indv, M_k, M_l) if (M_k * M_l) != 0 else 0
-
-
-
-        for k in range(self.num_bin):
-            M_k = self.M[j][k]
-
-            if not self.use_cov:
-                T[k, self.num_bin] = self.num_indv
-                T[self.num_bin, k] = self.num_indv
-
-            else:
-                B1 = self.XXz[k][1]
-                C1 = self.all_Uzb
-                tk_res = np.sum(B1 * C1.T)
-                tk_res = 1/(self.num_random_vec * M_k) * tk_res
-
-                T[k, self.num_bin] = self.num_indv - tk_res
-                T[self.num_bin, k] = self.num_indv - tk_res
-
-            q[k] = self.yXXy[k][1] / M_k if M_k != 0 else 0
-
-        T[self.num_bin, self.num_bin] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
-
-        pheno = self.pheno if not self.use_cov else self.regress_pheno(self.cov_matrix, self.pheno)
-        q[self.num_bin] = pheno.T @ pheno 
-
-        return T,q
 
     def _estimate_worker(self, worker_num, method, start_j, end_j, result_queue, trace_sum):
         sigma_ests = []
@@ -118,15 +98,11 @@ class StreamingBase(Base):
                 subsample = self.impute_geno(subsample, simulate_geno=True)
                 all_gen = self.partition_bins(subsample, sub_annot)
 
-            # calculate the stats for one jacknife subsample
-            for k in range(self.num_bin):
-                X_kj = all_gen[k] if j != self.num_jack else 0
-                self.pre_compute_jackknife_bin_pass_2(j, k, X_kj)
+            self.pre_compute_jackknife_bin_pass_2(j, all_gen)
 
             self.log._debug(f"Estimate for jackknife sample {j}")
             
-            T, q = self.setup_lhs_rhs_jackknife(j, trace_sum)
-
+            T, q = self.setup_lhs_rhs_jackknife(j, trace_sum, is_streaming=True)
             if self.get_trace:
                 trace_sum[j] = ((T[0][0], self.M[j]))
         

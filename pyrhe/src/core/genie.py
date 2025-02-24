@@ -1,6 +1,7 @@
 import numpy as np
 from . import Base
 from pyrhe.src.util.file_processing import read_env_file
+from pyrhe.src.util.mat_mul import *
 
 
 class GENIE(Base):
@@ -24,13 +25,17 @@ class GENIE(Base):
 
     def shared_memory(self):
         self.get_num_estimates()
+        # TODO: This part can also be abstracted.
         self.shared_memory_arrays = {
-                "XXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "yXXy": ((self.num_estimates, self.num_jack + 1), np.float64),
+            "XXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+            "yXXy": ((self.num_estimates, self.num_jack + 1), np.float64),
+            "M": ((self.num_jack + 1, self.num_estimates), np.int64)
+        }
+        if self.use_cov:
+            self.shared_memory_arrays.update({
                 "UXXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
                 "XXUz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "M": ((self.num_jack + 1, self.num_estimates), np.int64)
-            }
+            })
 
         if self.model == "G":
             self.M_last_row = self.len_bin
@@ -56,6 +61,7 @@ class GENIE(Base):
         for k, X_kj in enumerate(all_gen): 
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             print(f"k = {k}, M = {self.M[j][k]}")
+            # TODO: abstract
             for b in range(self.num_random_vec):
                 self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
                 if self.use_cov:
@@ -69,17 +75,17 @@ class GENIE(Base):
         if self.model == "G+GxE" or self.model == "G+GxE+NxE":
             for e in range(self.num_env):
                 for k, X_kj in enumerate(all_gen): 
-                    k = (e + 1) * k + self.num_bin
-                    self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
-                    X_kj = X_kj * (self.env[:, e]).reshape(-1, 1)
+                    k_gxe = (e + 1) * k + self.num_bin
+                    self.M[j][k_gxe] = self.M[self.num_jack][k_gxe] - X_kj.shape[1]
+                    X_kj_gxe = elem_mul(X_kj, self.env[:, e].reshape(-1, 1), device=self.device)
                     for b in range(self.num_random_vec):
-                        self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
+                        self.XXz[k_gxe, j, b, :] = self._compute_XXz(b, X_kj_gxe)
 
                         if self.use_cov:
-                            self.UXXz[k, j, b, :] = self._compute_UXXz(self.XXz[k][j][b])
-                            self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
+                            self.UXXz[k_gxe, j, b, :] = self._compute_UXXz(self.XXz[k_gxe][j][b])
+                            self.XXUz[k_gxe, j, b, :] = self._compute_XXUz(b, X_kj_gxe)
                     
-                    self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
+                    self.yXXy[k_gxe][j] = self._compute_yXXy(X_kj_gxe, y=self.pheno)
     
                 
         # NxE
@@ -98,7 +104,8 @@ class GENIE(Base):
 
         for i, est in enumerate(sigma_ests_total):
             if self.model == "G":
-                self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
+                if i != len(sigma_ests_total) - 1:
+                    self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
 
             elif self.model == "G+GxE":
                 if i < self.num_bin:

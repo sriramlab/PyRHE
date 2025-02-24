@@ -448,7 +448,7 @@ class Base(ABC):
                     self.yXXy[k][self.num_jack] += self.yXXy[k][j]
             else: # hetero noise
                 e = self.num_estimates - k - self.num_bin - self.num_gen_env_bin + 1
-                X_kj = np.eye(self.num_indv) * (self.env[:, e]).reshape(-1, 1)
+                X_kj = elem_mul(np.eye(self.num_indv), self.env[:, e].reshape(-1, 1), device=self.device)
                 for b in range(self.num_random_vec):
                     self.XXz[k][self.num_jack][b] = self._compute_XXz(b, X_kj)
                 self.yXXy[k][self.num_jack] = self._compute_yXXy(X_kj, y=self.pheno)
@@ -514,17 +514,12 @@ class Base(ABC):
         return ranges
 
     def pre_compute(self):
-        from . import StreamingRHE
-
         start_whole = time.time()
 
         self._setup_shared_memory()
 
         if self.multiprocessing:
             work_ranges = self._distribute_work(self.num_jack, self.num_workers)
-
-            processes = []
-
             mp_handler = MultiprocessingHandler(target=self._pre_compute_worker, work_ranges=work_ranges, device=self.device)
             mp_handler.start_processes()
             mp_handler.join_processes()
@@ -548,16 +543,19 @@ class Base(ABC):
                         shm.close()
                         shm.unlink()
 
-    def setup_lhs_rhs_jackknife(self, j, trace_sums):
+    def setup_lhs_rhs_jackknife(self, j, trace_sums, is_streaming = False):
         T = np.zeros((self.num_estimates+1, self.num_estimates+1))
         q = np.zeros((self.num_estimates+1, 1))
+
+        b_idx = j if not is_streaming else 1
 
         for k_k in range(self.num_estimates):
             for k_l in range(self.num_estimates):
                 M_k = self.M[j][k_k]
                 M_l = self.M[j][k_l]
-                B1 = self.XXz[k_k][j]
-                B2 = self.XXz[k_l][j]
+                B1 = self.XXz[k_k][b_idx]
+                B2 = self.XXz[k_l][b_idx]
+                
                 T[k_k, k_l] += np.sum(B1 * B2)
 
                 if self.use_cov:
@@ -566,8 +564,8 @@ class Base(ABC):
                     h3 = self.cov_matrix @ h2
                     trkij_res1 = np.sum(h3.T * B2)
 
-                    B1 = self.XXUz[k_k][j]
-                    B2 = self.UXXz[k_l][j]
+                    B1 = self.XXUz[k_k][b_idx]
+                    B2 = self.UXXz[k_l][b_idx]
                     trkij_res2 = np.sum(B1 * B2)
                 
                     T[k_k, k_l] += (trkij_res2 - 2 * trkij_res1)
@@ -585,7 +583,7 @@ class Base(ABC):
             b_trk = self.num_indv # Shortcut for trace calculation: tr(K) = N (Page 8 of the paper)
             if k >= self.num_bin:
                 # Trace calculation
-                B1 = self.XXz[k][j]
+                B1 = self.XXz[k][b_idx]
                 b_trk = np.sum(B1 * self.all_zb.T) / (self.num_random_vec * M_k)
 
             if not self.use_cov:
@@ -593,7 +591,7 @@ class Base(ABC):
                 T[self.num_estimates, k] = b_trk
 
             else:
-                B1 = self.XXz[k][j]
+                B1 = self.XXz[k][b_idx]
                 C1 = self.all_Uzb
                 tk_res = np.sum(B1 * C1.T)
                 tk_res = 1/(self.num_random_vec * M_k) * tk_res
@@ -601,7 +599,7 @@ class Base(ABC):
                 T[k, self.num_estimates] = b_trk - tk_res
                 T[self.num_estimates, k] = b_trk - tk_res
 
-            q[k] = self.yXXy[(k, j)] / M_k if M_k != 0 else 0
+            q[k] = self.yXXy[(k, b_idx)] / M_k if M_k != 0 else 0
         
         
         T[self.num_estimates, self.num_estimates] = self.num_indv if not self.use_cov else self.num_indv - self.cov_matrix.shape[1]
