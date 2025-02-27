@@ -59,9 +59,29 @@ class StreamingBase(Base):
                     self.XXUz[k][1][b] = self.XXUz[k][0][b]
 
     
-    @abstractmethod
     def shared_memory(self):
-        pass
+        self.shared_memory_arrays = {
+            "XXz":  ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+            "yXXy": ((self.num_estimates, self.num_workers), np.float64),
+            "M":    ((self.num_jack + 1, self.num_estimates), np.int64)
+        }
+        if self.use_cov:
+            self.shared_memory_arrays.update({
+                "UXXz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+                "XXUz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
+            })
+        
+        if self.multiprocessing:
+            # Resulting matrix after aggregating the results from each worker
+            self.shared_memory_arrays.update({
+                "XXz_per_jack": ((self.num_estimates, 2, self.num_random_vec, self.num_indv), np.float64),
+                "yXXy_per_jack": ((self.num_estimates, 2), np.float64),
+            })
+            if self.use_cov:
+                self.shared_memory_arrays.update({
+                    "UXXz_per_jack": ((self.num_estimates, 2, self.num_random_vec, self.num_indv), np.float64),
+                    "XXUz_per_jack": ((self.num_estimates, 2, self.num_random_vec, self.num_indv), np.float64),
+                })
 
     def _pre_compute_worker(self, worker_num, start_j, end_j, total_sample_queue=None):
         if self.multiprocessing:

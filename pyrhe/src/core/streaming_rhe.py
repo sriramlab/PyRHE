@@ -8,35 +8,7 @@ class StreamingRHE(RHE, StreamingBase):
         self,
         **kwargs
     ):
-        super().__init__(**kwargs) 
-    
-    def shared_memory(self):
-        self.get_num_estimates()
-        self.shared_memory_arrays = {
-            "XXz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
-            "yXXy": ((self.num_estimates, self.num_workers), np.float64),
-            "M": ((self.num_jack + 1, self.num_estimates), np.int64)
-        }
-
-        if self.use_cov:
-            self.shared_memory_arrays.update({
-                "UXXz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
-                "XXUz": ((self.num_estimates, self.num_workers, self.num_random_vec, self.num_indv), np.float64),
-            })
-
-        if self.multiprocessing:
-            # Resulting matrix after aggregating the results from each worker
-            self.shared_memory_arrays.update({
-                "XXz_per_jack": ((self.num_estimates, 2, self.num_random_vec, self.num_indv), np.float64),
-                "yXXy_per_jack": ((self.num_estimates, 2), np.float64),
-            })
-            if self.use_cov:
-                self.shared_memory_arrays.update({
-                    "UXXz_per_jack": ((self.num_estimates, 2, self.num_random_vec, self.num_indv), np.float64),
-                    "XXUz_per_jack": ((self.num_estimates, 2, self.num_random_vec, self.num_indv), np.float64),
-                })
-
-        self.M_last_row = self.len_bin
+        super().__init__(**kwargs)
     
     def pre_compute_jackknife_bin(self, j, all_gen, worker_num):
         for k, X_kj in enumerate(all_gen): 

@@ -188,8 +188,6 @@ class Base(ABC):
 
         self.pheno_cp = self.pheno.copy()
 
-        self.num_estimates = None
-
         self.num_gen_env_bin = 0
   
     
@@ -406,10 +404,18 @@ class Base(ABC):
         v = mat_mul(X_kj.T, pheno, device=self.device)
         return mat_mul(v.T, v, device=self.device)
 
-    ### Shared Memory
-    @abstractmethod
     def shared_memory(self):
-        pass
+        self.shared_memory_arrays = {
+            "XXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+            "yXXy": ((self.num_estimates, self.num_jack + 1), np.float64),
+            "M": ((self.num_jack + 1, self.num_estimates), np.int64)
+        }
+        if self.use_cov:
+            self.shared_memory_arrays.update({
+                "UXXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+                "XXUz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
+            })
+
 
     def create_shared_memory(self, arrays):
         for name, (shape, dtype) in arrays.items():
@@ -419,6 +425,7 @@ class Base(ABC):
                 setattr(self, f"{name}_shm", shm)
 
     def _setup_shared_memory(self):
+        self.num_estimates = self.get_num_estimates()
         self.shared_memory()
         self.create_shared_memory(self.shared_memory_arrays)
 
@@ -428,7 +435,7 @@ class Base(ABC):
 
         self.M = getattr(self, "M")
         self.M.fill(0)
-        self.M[self.num_jack] = self.M_last_row
+        self.M[self.num_jack] = self.get_M_last_row()
     
     
     @abstractmethod
@@ -437,6 +444,10 @@ class Base(ABC):
     
     @abstractmethod
     def get_num_estimates(self):
+        pass
+
+    @abstractmethod
+    def get_M_last_row(self):
         pass
     
     def aggregate(self):

@@ -22,38 +22,23 @@ class GENIE(Base):
         self.log._log(f"Number of environments: {self.num_env}")
         self.log._log(f"Model: {self.model}")
 
-
-    def shared_memory(self):
-        self.get_num_estimates()
-        # TODO: This part can also be abstracted.
-        self.shared_memory_arrays = {
-            "XXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-            "yXXy": ((self.num_estimates, self.num_jack + 1), np.float64),
-            "M": ((self.num_jack + 1, self.num_estimates), np.int64)
-        }
-        if self.use_cov:
-            self.shared_memory_arrays.update({
-                "UXXz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-                "XXUz": ((self.num_estimates, self.num_jack + 1, self.num_random_vec, self.num_indv), np.float64),
-            })
-
-        if self.model == "G":
-            self.M_last_row = self.len_bin
-        elif self.model == "G+GxE":
-            self.M_last_row = np.concatenate((self.len_bin, self.len_bin * self.num_env))
-        elif self.model == "G+GxE+NxE":
-            self.M_last_row = np.concatenate((self.len_bin, self.len_bin * self.num_env, [1] * self.num_env))
-        else:
-            raise ValueError("Unsupported GENIE model type")
-
-
     def get_num_estimates(self):
         if self.model == "G":
-            self.num_estimates = self.num_bin
+            return self.num_bin
         elif self.model == "G+GxE":
-            self.num_estimates = self.num_bin + self.num_gen_env_bin
+            return self.num_bin + self.num_gen_env_bin
         elif self.model == "G+GxE+NxE":
-            self.num_estimates = self.num_bin + self.num_gen_env_bin + self.num_env
+            return self.num_bin + self.num_gen_env_bin + self.num_env
+        else:
+            raise ValueError("Unsupported GENIE model type")
+    
+    def get_M_last_row(self):
+        if self.model == "G":
+            return self.len_bin
+        elif self.model == "G+GxE":
+            return np.concatenate((self.len_bin, self.len_bin * self.num_env))
+        elif self.model == "G+GxE+NxE":
+            return np.concatenate((self.len_bin, self.len_bin * self.num_env, [1] * self.num_env))
         else:
             raise ValueError("Unsupported GENIE model type")
 
