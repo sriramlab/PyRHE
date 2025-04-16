@@ -13,6 +13,7 @@ class StreamingGENIE(GENIE, StreamingBase):
     def pre_compute_jackknife_bin(self, j, all_gen, worker_num):
         # G
         for k, X_kj in enumerate(all_gen): 
+            X_kj = self.standardize_geno(X_kj)
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             for b in range(self.num_random_vec):
                 self.XXz[k][worker_num][b] += self._compute_XXz(b, X_kj)
@@ -26,9 +27,10 @@ class StreamingGENIE(GENIE, StreamingBase):
                 
         
         # GxE
-        if self.model == "G+GxE" or self.model == "G+GxE+NxE":
+        if self.genie_model == "G+GxE" or self.genie_model == "G+GxE+NxE":
             for e in range(self.num_env):
                 for k, X_kj in enumerate(all_gen): 
+                    X_kj = self.standardize_geno(X_kj)
                     k_gxe = (e + 1) * k + self.num_bin
                     self.M[j][k_gxe] = self.M[self.num_jack][k_gxe] - X_kj.shape[1]
                     X_kj_gxe = elem_mul(X_kj, self.env[:, e].reshape(-1, 1), device=self.device)  # Avoid modifying X_kj
@@ -43,7 +45,7 @@ class StreamingGENIE(GENIE, StreamingBase):
                     self.yXXy[k_gxe][worker_num] += yXXy_kj[0][0]
                 
         # NxE
-        if self.model == "G+GxE+NxE":
+        if self.genie_model == "G+GxE+NxE":
             for e in range(self.num_env):
                 k = e + self.num_bin + self.num_gen_env_bin
                 self.M[j][k] = 1
@@ -51,6 +53,7 @@ class StreamingGENIE(GENIE, StreamingBase):
     def pre_compute_jackknife_bin_pass_2(self, j, all_gen):
         # G
         for k, X_kj in enumerate(all_gen): 
+            X_kj = self.standardize_geno(X_kj)
             for b in range (self.num_random_vec):
                 XXz_kb = self._compute_XXz(b, X_kj) if j != self.num_jack else 0
                 if self.use_cov:
@@ -64,9 +67,10 @@ class StreamingGENIE(GENIE, StreamingBase):
             self.yXXy[k][1] = self.yXXy[k][0] - yXXy_k
         
         # GxE
-        if self.model == "G+GxE" or self.model == "G+GxE+NxE":
+        if self.genie_model == "G+GxE" or self.genie_model == "G+GxE+NxE":
             for e in range(self.num_env):
                 for k, X_kj in enumerate(all_gen): 
+                    X_kj = self.standardize_geno(X_kj)
                     k_gxe = (e + 1) * k + self.num_bin
                     X_kj_gxe = elem_mul(X_kj, self.env[:, e].reshape(-1, 1), device=self.device)
                     for b in range(self.num_random_vec):

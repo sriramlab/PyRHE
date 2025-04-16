@@ -2,12 +2,7 @@ from . import Base
 
 
 class RHE(Base):
-    def __init__(
-        self,
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-    
+
     def get_num_estimates(self):
         return self.num_bin  
 
@@ -17,6 +12,7 @@ class RHE(Base):
 
     def pre_compute_jackknife_bin(self, j, all_gen):
         for k, X_kj in enumerate(all_gen): 
+            X_kj = self.standardize_geno(X_kj)
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             for b in range(self.num_random_vec):
                 self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
@@ -25,6 +21,9 @@ class RHE(Base):
                     self.XXUz[k, j, b, :] = self._compute_XXUz(b, X_kj)
             self.yXXy[k][j] = self._compute_yXXy(X_kj, y=self.pheno)
     
+    def b_trace_calculation(self, k, j, b_idx):
+        b_trk = self.num_indv
+        return b_trk
 
     def run(self, method):
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)

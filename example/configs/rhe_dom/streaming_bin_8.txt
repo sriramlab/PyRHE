@@ -1,30 +1,18 @@
 [PyRHE_Config]
+model = rhe_dom
 genotype = test
 phenotype = test.pheno
 annotation=multi.annot
 covariate=test.cov
 cov_one_hot_conversion = yes
-output=outputs/rhe/no_streaming_bin_8.txt
+output=outputs/rhe_dom/streaming_bin_8.txt
 num_vec = 10
 num_bin =  8
 num_workers = 5
 num_block = 100
-streaming = no
+streaming = yes
 debug = yes
 benchmark_runtime = no
 geno_impute_method = binary
 cov_impute_method = ignore
 trace = yes
-
-
-
-
-[Original_RHE_Config]
-genotype = test
-phenotype = test.pheno
-covariate=test.cov
-annotation=single.annot
-num_vec = 10
-num_bin = 1
-num_block = 100
-streaming = no

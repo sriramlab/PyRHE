@@ -8,7 +8,7 @@ class GENIE(Base):
     def __init__(
         self,
         env_file: str,
-        model: str,
+        genie_model: str,
         **kwargs
     ):
          
@@ -17,36 +17,36 @@ class GENIE(Base):
         self.num_env, self.env = read_env_file(env_file)
         self.env = self.env[:, np.newaxis]
         self.num_gen_env_bin = self.num_bin * self.num_env
-        self.model = model
+        self.genie_model = genie_model
 
         self.log._log(f"Number of environments: {self.num_env}")
-        self.log._log(f"Model: {self.model}")
+        self.log._log(f"GENIE model: {self.genie_model}")
 
     def get_num_estimates(self):
-        if self.model == "G":
+        if self.genie_model == "G":
             return self.num_bin
-        elif self.model == "G+GxE":
+        elif self.genie_model == "G+GxE":
             return self.num_bin + self.num_gen_env_bin
-        elif self.model == "G+GxE+NxE":
+        elif self.genie_model == "G+GxE+NxE":
             return self.num_bin + self.num_gen_env_bin + self.num_env
         else:
-            raise ValueError("Unsupported GENIE model type")
+            raise ValueError("Unsupported GENIE genie_model type")
     
     def get_M_last_row(self):
-        if self.model == "G":
+        if self.genie_model == "G":
             return self.len_bin
-        elif self.model == "G+GxE":
+        elif self.genie_model == "G+GxE":
             return np.concatenate((self.len_bin, self.len_bin * self.num_env))
-        elif self.model == "G+GxE+NxE":
+        elif self.genie_model == "G+GxE+NxE":
             return np.concatenate((self.len_bin, self.len_bin * self.num_env, [1] * self.num_env))
         else:
-            raise ValueError("Unsupported GENIE model type")
+            raise ValueError("Unsupported GENIE genie_model type")
 
     def pre_compute_jackknife_bin(self, j, all_gen):
         for k, X_kj in enumerate(all_gen): 
+            X_kj = self.standardize_geno(X_kj)
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             print(f"k = {k}, M = {self.M[j][k]}")
-            # TODO: abstract
             for b in range(self.num_random_vec):
                 self.XXz[k, j, b, :] = self._compute_XXz(b, X_kj)
                 if self.use_cov:
@@ -57,9 +57,10 @@ class GENIE(Base):
         
         
         # GxE
-        if self.model == "G+GxE" or self.model == "G+GxE+NxE":
+        if self.genie_model == "G+GxE" or self.genie_model == "G+GxE+NxE":
             for e in range(self.num_env):
                 for k, X_kj in enumerate(all_gen): 
+                    X_kj = self.standardize_geno(X_kj)
                     k_gxe = (e + 1) * k + self.num_bin
                     self.M[j][k_gxe] = self.M[self.num_jack][k_gxe] - X_kj.shape[1]
                     X_kj_gxe = elem_mul(X_kj, self.env[:, e].reshape(-1, 1), device=self.device)
@@ -74,31 +75,41 @@ class GENIE(Base):
     
                 
         # NxE
-        if self.model == "G+GxE+NxE":
+        if self.genie_model == "G+GxE+NxE":
             for e in range(self.num_env):
                 k = e + self.num_bin + self.num_gen_env_bin
                 self.M[j][k] = 1
-        
     
+    def b_trace_calculation(self, k, j, b_idx):
+        if k >= self.num_bin:
+            # Actual trace calculation
+            M_k = self.M[j][k]
+            B1 = self.XXz[k][b_idx]
+            b_trk = np.sum(B1 * self.all_zb.T) / (self.num_random_vec * M_k)
+        else:
+            # Trace can be directly calculated as self.num_indv since the genotype is standardized
+            b_trk = self.num_indv
+
+        return b_trk
+
     def run(self, method):
         sigma_est_jackknife, sigma_ests_total = self.estimate(method=method)
         sig_errs = self.estimate_error(sigma_est_jackknife)
 
         self.log._log("Variance components: ")
 
-
         for i, est in enumerate(sigma_ests_total):
-            if self.model == "G":
+            if self.genie_model == "G":
                 if i != len(sigma_ests_total) - 1:
                     self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
 
-            elif self.model == "G+GxE":
+            elif self.genie_model == "G+GxE":
                 if i < self.num_bin:
                     self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
                 else:
                     self.log._log(f"Sigma^2_gxe[{i - self.num_bin}] : {est}  SE : {sig_errs[i]}")
 
-            elif self.model == "G+GxE+NxE":
+            elif self.genie_model == "G+GxE+NxE":
                 if i < self.num_bin:
                     self.log._log(f"Sigma^2_g[{i}] : {est}  SE : {sig_errs[i]}")
                 elif i < self.num_bin + self.num_gen_env_bin:

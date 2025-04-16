@@ -23,6 +23,7 @@ from pyrhe.src.util.logger import Logger
 class Base(ABC):
     def __init__(
         self,
+        model: str,
         geno_file: str,
         annot_file: str = None,
         pheno_file: str = None,
@@ -45,6 +46,7 @@ class Base(ABC):
         pop_prev: Optional[float] = None,
         log: Optional[Logger] = None
     ):
+        self.model = model
 
         # TODO: Use annot to determine num_bin instead of passing in num_bin or do some checking
         self.num_jack = num_jack # TODO: Checking num jack > 0
@@ -178,9 +180,6 @@ class Base(ABC):
         # trace info
         self.get_trace = get_trace
         self.trace_dir = trace_dir
-        if self.get_trace:
-            if self.num_bin > 1:
-                raise ValueError("Save trace failed. ")
         
         # liability scale
         self.samp_prev = samp_prev
@@ -188,7 +187,9 @@ class Base(ABC):
 
         self.pheno_cp = self.pheno.copy()
 
+        # Environment factors
         self.num_gen_env_bin = 0
+        self.num_env = 0
   
     
     def _init_device(self, device, cuda_num):
@@ -273,25 +274,26 @@ class Base(ABC):
             return 2
         
 
-    def impute_geno(self, X, simulate_geno: bool = True):
+    def impute_geno(self, X):
         N = X.shape[0]
         M = X.shape[1]
         X_imp = X
-        if simulate_geno:
-            for m in range(M):
-                missing_mask = np.isnan(X[:, m])
-                if self.geno_impute_methods == GenoImputeMethod.BINARY.value:
-                    observed_mean = np.nanmean(X[:, m])
-                    X_imp[missing_mask, m] = self._simulate_geno_from_random(observed_mean * 0.5)
-                else:
-                    X_imp[missing_mask, m] = 0 # mean imputation is just filling with 0 after standardization
-                        
-        means = np.mean(X_imp, axis=0)
+        for m in range(M):
+            missing_mask = np.isnan(X[:, m])
+            if self.geno_impute_methods == GenoImputeMethod.BINARY.value:
+                observed_mean = np.nanmean(X[:, m])
+                X_imp[missing_mask, m] = self._simulate_geno_from_random(observed_mean * 0.5)
+            else:
+                X_imp[missing_mask, m] = 0 # mean imputation is just filling with 0 after standardization
+              
+        return X_imp
+
+    def standardize_geno(self, geno):
+        means = np.mean(geno, axis=0)
         stds = 1/np.sqrt(means*(1-0.5*means))
 
-        X_imp_standardized = (X_imp - means) * stds
-              
-        return X_imp_standardized
+        geno_standardized = (geno - means) * stds
+        return geno_standardized
 
     def solve_linear_equation(self, X, y):
         '''
@@ -341,10 +343,20 @@ class Base(ABC):
                 subsample_temp = self.geno_bed.read(index=np.s_[::1,start:end])
                 subsample = np.delete(subsample_temp, self.missing_indv, axis=0)
                 del subsample_temp
+            
+            # PLINK encoding uses minor allele frequency. So, to correctly calculate the MAF we need to encode every 0 to 2 and every 2 to 0 after reading the bed file
+            # This does not affect RHE / GENIE
+            # This only affects the RHE_DOM which needs to calculate the MAF
+            # (Reference: https://github.com/sriramlab/RHE-mc/blob/0e901d4131c177ba2468ff77c9fb44f9fa46e255/src/rhemc_dom.cpp#L1608)
+            # Vectorized version to make it faster
+            geno_flipped = subsample.copy()
+            geno_flipped[subsample == 2] = 0
+            geno_flipped[subsample == 0] = 2   
+            subsample = geno_flipped
+            return subsample
+
         except Exception as e:
             raise Exception(f"Error occurred: {e}")
-        
-        return subsample
 
 
     def _get_jacknife_subsample(self, jack_index: int) -> np.ndarray:
@@ -449,10 +461,10 @@ class Base(ABC):
     @abstractmethod
     def get_M_last_row(self):
         pass
-    
+
     def aggregate(self):
         for k in range(self.num_estimates):
-            if k < self.num_bin + self.num_gen_env_bin: 
+            if k < self.num_estimates - self.num_env: 
                 for j in range(self.num_jack):
                     for b in range (self.num_random_vec):
                         self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
@@ -475,7 +487,7 @@ class Base(ABC):
             
         if self.use_cov:
             for k in range(self.num_estimates): 
-                if k < self.num_bin + self.num_gen_env_bin: # non hetero noise
+                if k < self.num_estimates - self.num_env:  # non hetero noise
                     for j in range(self.num_jack):
                         for b in range (self.num_random_vec):
                             self.UXXz[k][self.num_jack][b] += self.UXXz[k][j][b]
@@ -500,16 +512,12 @@ class Base(ABC):
 
                 subsample, sub_annot = self._get_jacknife_subsample(j)
 
-                # start = time.time()
-                # subsample is standardized
-                subsample = self.impute_geno(subsample, simulate_geno=True)
+                subsample_original = self.impute_geno(subsample)
 
-                assert subsample.shape[0] == self.num_indv
-
-                # end = time.time()
-                # self.log._debug(f"impute time: {end - start}")
-                all_gen = self.partition_bins(subsample, sub_annot)
+                assert subsample_original.shape[0] == self.num_indv
                 
+                all_gen = self.partition_bins(subsample_original, sub_annot)
+
                 self.pre_compute_jackknife_bin(j, all_gen)
                     
                 end_whole = time.time()
@@ -553,6 +561,9 @@ class Base(ABC):
                         shm = getattr(self, f'{name}_shm')
                         shm.close()
                         shm.unlink()
+    @abstractmethod
+    def b_trace_calculation(self, k, j, b_idx):
+        pass
 
     def setup_lhs_rhs_jackknife(self, j, trace_sums, is_streaming = False):
         T = np.zeros((self.num_estimates+1, self.num_estimates+1))
@@ -591,11 +602,7 @@ class Base(ABC):
 
         for k in range(self.num_estimates):
             M_k = self.M[j][k]
-            b_trk = self.num_indv # Shortcut for trace calculation: tr(K) = N (Page 8 of the paper)
-            if k >= self.num_bin:
-                # Trace calculation
-                B1 = self.XXz[k][b_idx]
-                b_trk = np.sum(B1 * self.all_zb.T) / (self.num_random_vec * M_k)
+            b_trk = self.b_trace_calculation(k, j, b_idx)
 
             if not self.use_cov:
                 T[k, self.num_estimates] = b_trk

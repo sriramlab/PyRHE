@@ -10,7 +10,7 @@ Active essential options:
 	-annot (annotation) single.annot
 	-p (phenotype) test.pheno
 	-c (covariates) test.cov
-	-o (output) outputs/rhe/no_streaming_bin_1.txt
+	-o (output) outputs/rhe_dom/no_streaming_bin_1.txt
 	-k (# random vectors) 10
 	-jn (# jackknife blocks) 100
 	--num_workers 5
@@ -29,21 +29,16 @@ Number of features in bin 0 : 10000
 OUTPUT FOR TRAIT 0: 
 Saved trace summary into run_test.pheno(.tr/.MN)
 Variance components: 
-Sigma^2_g[0] : 0.16241267611557975  SE : 0.030938069538554984
-Sigma^2_e : 0.7969651822679482  SE : 0.030947296404198268
+Sigma^2_g[0] : 0.163675733973995  SE : 0.031165646755178186
+Sigma^2_g[1] : 0.03678085557814865  SE : 0.02999094873288129
+Sigma^2_e : 0.7589093951139498  SE : 0.04537265437906698
 *****
 Heritabilities:
-h2_g[0] : 0.16928958146817316 : 0.03224962407730982
-Total h2 : 0.16928958146817316 SE: 0.03224962407730982
+h2_g[0] : 0.17060823146753762 : 0.032487353379562614
+h2_g[1] : 0.03833871136357851 : 0.03126157834919299
+Total h2 : 0.20894694283111612 SE: 0.047283085715250056
 *****
 Enrichments: 
-Enrichment g[0] : 1.0 SE : 0.0
-*****
-*****
-Heritabilities and enrichments computed based on overlapping setting
-Heritabilities:
-h2_g[0] : 0.16928958146814096 : 0.03224962407728962
-Total h2 : 0.16928958146817316 SE: 0.03224962407730982
-Enrichments (overlapping def):
-Enrichment g[0] : 0.9999999999998098 SE : 1.2257069904382272e-12
-Runtime:  3.7085657119750977
+Enrichment g[0] : 1.6330292193404694 SE : 0.2503139344954044
+Enrichment g[1] : 0.36697078065953076 SE : 0.250313934495404
+Runtime:  1.4504003524780273

@@ -1,7 +1,7 @@
 import argparse
 import os
 import numpy as np
-from pyrhe.src.core import RHE, StreamingRHE, GENIE, StreamingGENIE
+from pyrhe.src.core import RHE, StreamingRHE, GENIE, StreamingGENIE, RHE_DOM, StreamingRHE_DOM
 from pyrhe.src.util import Logger
 from constant import DATA_DIR
 import time
@@ -75,6 +75,7 @@ def main(args):
 
 
     params = {
+        'model': args.model,
         'geno_file': args.genotype,
         'annot_file': annot_path,
         'pheno_file': pheno_file,
@@ -106,12 +107,17 @@ def main(args):
     
     elif args.model == "genie":
         params['env_file'] = args.env
-        params['model'] = args.genie_model
+        params['genie_model'] = args.genie_model
         if args.streaming:
             rhe = StreamingGENIE(**params)
         else:
             rhe = GENIE(**params)
-
+    
+    elif args.model == "rhe_dom":
+        if args.streaming:
+            rhe = StreamingRHE_DOM(**params)
+        else:
+            rhe = RHE_DOM(**params)
     else:
         raise ValueError("Unsupported Model")
 
@@ -150,7 +156,7 @@ def main(args):
 if __name__ == '__main__':
     # TODO: use config file instead of argparse
     parser = argparse.ArgumentParser(description='PyRHE') 
-    parser.add_argument('--model', type=str, default="rhe", choices=['rhe', 'genie'])
+    parser.add_argument('--model', type=str, default="rhe", choices=['rhe', 'genie', 'rhe_dom'])
     parser.add_argument('--genie_model', type=str, default="G+GxE+NxE", choices=['G', 'G+GxE', 'G+GxE+NxE'])
     parser.add_argument('--streaming', action='store_true', help='use streaming version')
 

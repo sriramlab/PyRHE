@@ -12,6 +12,7 @@ class StreamingRHE(RHE, StreamingBase):
     
     def pre_compute_jackknife_bin(self, j, all_gen, worker_num):
         for k, X_kj in enumerate(all_gen): 
+            X_kj = self.standardize_geno(X_kj)
             self.M[j][k] = self.M[self.num_jack][k] - X_kj.shape[1]
             for b in range(self.num_random_vec):
                 self.XXz[k][worker_num][b] += self._compute_XXz(b, X_kj)
@@ -28,7 +29,7 @@ class StreamingRHE(RHE, StreamingBase):
 
     def pre_compute_jackknife_bin_pass_2(self, j, all_gen):
         for k in range(self.num_estimates):
-            X_kj = all_gen[k] if j != self.num_jack else 0
+            X_kj = self.standardize_geno(all_gen[k]) if j != self.num_jack else 0
             for b in range (self.num_random_vec):
                 XXz_kb = self._compute_XXz(b, X_kj) if j != self.num_jack else 0
                 if self.use_cov:

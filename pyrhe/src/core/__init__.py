@@ -5,3 +5,5 @@ from .streaming_rhe import *
 from .mp_handler import *
 from .genie import *
 from .streaming_genie import *
+from .rhe_dom import *
+from .streaming_rhe_dom import *

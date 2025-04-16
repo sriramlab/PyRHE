@@ -27,4 +27,6 @@ test_small_sample.py
 
 
 !example/**/*
+example/*.MN
+example/*.tr
 # /example

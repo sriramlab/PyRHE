@@ -1,0 +1,91 @@
+##################################
+#                                #
+#          PyRHE (v1.0.0)        #
+#                                #
+##################################
+
+
+Active essential options:
+	-g (genotype) test
+	-annot (annotation) multi.annot
+	-p (phenotype) test.pheno
+	-c (covariates) test.cov
+	-o (output) outputs/rhe/no_streaming_bin_8.txt
+	-k (# random vectors) 10
+	-jn (# jackknife blocks) 100
+	--num_workers 5
+	--device cpu
+	--geno_impute_method binary
+	--cov_impute_method ignore
+
+
+Number of traits: 1
+Rank of the covariate matrix: 5
+Number of individuals after filtering: 5000
+Number of covariates: 5
+*****
+Number of features in bin 0 : 1250
+Number of features in bin 1 : 1250
+Number of features in bin 2 : 1252
+Number of features in bin 3 : 1268
+Number of features in bin 4 : 1226
+Number of features in bin 5 : 1262
+Number of features in bin 6 : 1307
+Number of features in bin 7 : 1185
+*****
+OUTPUT FOR TRAIT 0: 
+Saved trace summary into run_test.pheno(.tr/.MN)
+Variance components: 
+Sigma^2_g[0] : 0.026317590628128117  SE : 0.012197555993044635
+Sigma^2_g[1] : 0.010018760135740986  SE : 0.008674782428763772
+Sigma^2_g[2] : 0.007307982216922513  SE : 0.011138506567835122
+Sigma^2_g[3] : 0.013794854442550278  SE : 0.011561235634899612
+Sigma^2_g[4] : 0.017511499558091878  SE : 0.010987062109023466
+Sigma^2_g[5] : 0.02777281812981966  SE : 0.01620801343594315
+Sigma^2_g[6] : -0.005171145202662892  SE : 0.009598074931322668
+Sigma^2_g[7] : 0.03753758376892856  SE : 0.014642696590599118
+Sigma^2_e : 0.8243023395252294  SE : 0.03161638902944703
+*****
+Heritabilities:
+h2_g[0] : 0.02743152210925843 : 0.012713965209063219
+h2_g[1] : 0.01044281917954902 : 0.009042105864486562
+h2_g[2] : 0.007617303521064612 : 0.011610100811790359
+h2_g[3] : 0.014378742339367985 : 0.012050662321968844
+h2_g[4] : 0.01825270003176706 : 0.011452223866547418
+h2_g[5] : 0.028948344296772323 : 0.016894183228858717
+h2_g[6] : -0.0053900216764304265 : 0.0100043884076258
+h2_g[7] : 0.039126418281806984 : 0.015262732743948211
+Total h2 : 0.14080782808315598 SE: 0.032947857801181486
+*****
+Enrichments: 
+Enrichment g[0] : 1.5585225612915992 SE : 0.6506600809986347
+Enrichment g[1] : 0.5933090125291541 SE : 0.4158333297453249
+Enrichment g[2] : 0.4320859377270401 SE : 0.511651927397093
+Enrichment g[3] : 0.8053317997127285 SE : 0.5634157489551097
+Enrichment g[4] : 1.0573282761699192 SE : 0.541355710866588
+Enrichment g[5] : 1.6290618550492475 SE : 0.7723161013782753
+Enrichment g[6] : -0.29287892679479616 SE : 0.4650818937416863
+Enrichment g[7] : 2.344903330226492 SE : 0.7108093292335892
+*****
+*****
+Heritabilities and enrichments computed based on overlapping setting
+Heritabilities:
+h2_g[0] : 0.02743152210925874 : 0.012713965209063184
+h2_g[1] : 0.010442819179548897 : 0.009042105864486408
+h2_g[2] : 0.007617303521064697 : 0.011610100811790399
+h2_g[3] : 0.014378742339368334 : 0.012050662321969033
+h2_g[4] : 0.018252700031767193 : 0.011452223866547493
+h2_g[5] : 0.028948344296772878 : 0.016894183228859255
+h2_g[6] : -0.00539002167643033 : 0.0100043884076258
+h2_g[7] : 0.039126418281806304 : 0.015262732743947769
+Total h2 : 0.14080782808315598 SE: 0.032947857801181486
+Enrichments (overlapping def):
+Enrichment g[0] : 1.558522561291617 SE : 0.650660080998603
+Enrichment g[1] : 0.593309012529147 SE : 0.41583332974531384
+Enrichment g[2] : 0.43208593772704496 SE : 0.511651927397095
+Enrichment g[3] : 0.8053317997127479 SE : 0.5634157489551207
+Enrichment g[4] : 1.057328276169927 SE : 0.5413557108665912
+Enrichment g[5] : 1.6290618550492788 SE : 0.7723161013782931
+Enrichment g[6] : -0.292878926794791 SE : 0.4650818937416863
+Enrichment g[7] : 2.344903330226451 SE : 0.7108093292335584
+Runtime:  5.003958463668823

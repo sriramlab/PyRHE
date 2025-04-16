@@ -22,7 +22,7 @@ class StreamingBase(Base):
         # [k][0][b] stores the sum
         if self.multiprocessing:
             for k in range(self.num_estimates):
-                if k < self.num_bin + self.num_gen_env_bin: # The hetero noise does not have to be calculated in this way
+                if k < self.num_estimates - self.num_env: # The hetero noise does not have to be calculated in this way
                     self.yXXy_per_jack[k][0] = np.sum(self.yXXy[k, :])
                     for b in range(self.num_random_vec):
                         self.XXz_per_jack[k, 0, b, :] = np.sum(self.XXz[k, :, b, :], axis=0)
@@ -42,21 +42,20 @@ class StreamingBase(Base):
             del self.XXUz_per_jack
 
         # Only a single calculation for the hetero noise. No need to aggregate across the workers.  
-        if hasattr(self, 'num_env'):
-            for e in range(self.num_env):
-                k = e + self.num_bin + self.num_gen_env_bin
-                X_kj = elem_mul(np.eye(self.num_indv), self.env[:, e].reshape(-1, 1), device=self.device)
-                for b in range(self.num_random_vec):
-                    self.XXz[k][0][b] = self._compute_XXz(b, X_kj)
-                    self.XXz[k][1][b] = self.XXz[k][0][b] # No need to do the jackknife sampling for the hetero noise. 
-                self.yXXy[k][0] = self._compute_yXXy(X_kj, y=self.pheno)
-                self.yXXy[k][1] = self.yXXy[k][0]
+        for e in range(self.num_env):
+            k = e + self.num_bin + self.num_gen_env_bin
+            X_kj = elem_mul(np.eye(self.num_indv), self.env[:, e].reshape(-1, 1), device=self.device)
+            for b in range(self.num_random_vec):
+                self.XXz[k][0][b] = self._compute_XXz(b, X_kj)
+                self.XXz[k][1][b] = self.XXz[k][0][b] # No need to do the jackknife sampling for the hetero noise. 
+            self.yXXy[k][0] = self._compute_yXXy(X_kj, y=self.pheno)
+            self.yXXy[k][1] = self.yXXy[k][0]
 
-                if self.use_cov:
-                    self.UXXz[k][0][b] = self._compute_UXXz(self.XXz[k][0][b])
-                    self.UXXz[k][1][b] = self.UXXz[k][0][b]
-                    self.XXUz[k][0][b] = self._compute_XXUz(b, X_kj)
-                    self.XXUz[k][1][b] = self.XXUz[k][0][b]
+            if self.use_cov:
+                self.UXXz[k][0][b] = self._compute_UXXz(self.XXz[k][0][b])
+                self.UXXz[k][1][b] = self.UXXz[k][0][b]
+                self.XXUz[k][0][b] = self._compute_XXUz(b, X_kj)
+                self.XXUz[k][1][b] = self.XXUz[k][0][b]
 
     
     def shared_memory(self):
@@ -93,7 +92,7 @@ class StreamingBase(Base):
             self.log._debug(f"Worker {multiprocessing.current_process().name} processing jackknife sample {j}")
             start_whole = time.time()
             subsample, sub_annot = self._get_jacknife_subsample(j)
-            subsample = self.impute_geno(subsample, simulate_geno=True)
+            subsample = self.impute_geno(subsample)
             if total_sample_queue is not None:
                 total_sample_queue.put((worker_num, subsample.shape[0]))
             else:
@@ -115,9 +114,8 @@ class StreamingBase(Base):
             start_whole = time.time()
             if j != self.num_jack:
                 subsample, sub_annot = self._get_jacknife_subsample(j)
-                subsample = self.impute_geno(subsample, simulate_geno=True)
+                subsample = self.impute_geno(subsample)
                 all_gen = self.partition_bins(subsample, sub_annot)
-
             self.pre_compute_jackknife_bin_pass_2(j, all_gen)
 
             self.log._debug(f"Estimate for jackknife sample {j}")
