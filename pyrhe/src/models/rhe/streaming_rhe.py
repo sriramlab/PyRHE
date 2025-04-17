@@ -1,6 +1,6 @@
 import numpy as np
-from . import StreamingBase
-from . import RHE
+from pyrhe.src.base import StreamingBase
+from pyrhe.src.models.rhe import RHE
 
 
 class StreamingRHE(RHE, StreamingBase):

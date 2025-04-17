@@ -1,5 +1,5 @@
-from . import StreamingBase
-from . import GENIE
+from pyrhe.src.base import StreamingBase
+from pyrhe.src.models.genie import GENIE
 from pyrhe.src.util.mat_mul import *
 
 

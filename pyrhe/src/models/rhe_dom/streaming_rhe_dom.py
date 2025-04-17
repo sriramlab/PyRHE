@@ -1,6 +1,6 @@
 import numpy as np
-from . import StreamingBase
-from . import RHE_DOM
+from pyrhe.src.base import StreamingBase
+from pyrhe.src.models.rhe_dom import RHE_DOM
 from pyrhe.src.util.mat_mul import *
 
 

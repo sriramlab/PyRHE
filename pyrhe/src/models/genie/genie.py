@@ -1,5 +1,5 @@
 import numpy as np
-from . import Base
+from pyrhe.src.base import Base
 from pyrhe.src.util.file_processing import read_env_file
 from pyrhe.src.util.mat_mul import *
 

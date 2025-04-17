@@ -12,7 +12,7 @@ from pyrhe.src.util.file_processing import *
 from tqdm import tqdm
 import multiprocessing
 from multiprocessing import shared_memory, Manager
-from pyrhe.src.core.mp_handler import MultiprocessingHandler
+from pyrhe.src.util.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.mat_mul import *
 from pyrhe.src.util.types import *
 from pyrhe.src.util.logger import Logger

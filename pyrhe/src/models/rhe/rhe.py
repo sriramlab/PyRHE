@@ -1,4 +1,4 @@
-from . import Base
+from pyrhe.src.base import Base
 
 
 class RHE(Base):

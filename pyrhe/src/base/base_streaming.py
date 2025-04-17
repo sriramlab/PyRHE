@@ -4,8 +4,8 @@ from abc import abstractmethod
 import multiprocessing
 from tqdm import tqdm
 from typing import List, Tuple
-from . import Base
-from pyrhe.src.core.mp_handler import MultiprocessingHandler
+from pyrhe.src.base import Base
+from pyrhe.src.util.mp_handler import MultiprocessingHandler
 from pyrhe.src.util.types import *
 from pyrhe.src.util.mat_mul import *
 

@@ -1,4 +1,4 @@
-from . import Base
+from pyrhe.src.base import Base
 import numpy as np
 from typing import List, Tuple, Optional
 

@@ -1,7 +1,9 @@
 import argparse
 import os
 import numpy as np
-from pyrhe.src.core import RHE, StreamingRHE, GENIE, StreamingGENIE, RHE_DOM, StreamingRHE_DOM
+from pyrhe.src.models.rhe import RHE, StreamingRHE
+from pyrhe.src.models.genie import GENIE, StreamingGENIE
+from pyrhe.src.models.rhe_dom import RHE_DOM, StreamingRHE_DOM
 from pyrhe.src.util import Logger
 from constant import DATA_DIR
 import time
