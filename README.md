@@ -1,6 +1,20 @@
 # PyRHE
 
-[PyRHE](https://pypi.org/project/pyrhe/) is an efficient and portable Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It converts large matrix into tensors to accelerate large matrix multiplication and incorporates multiprocessing to process Jackknife blocks in parallel. It is designed to run on both CPU and CUDA-enabled GPU, and is easy to install and integrate into other applications.
+[PyRHE](https://pypi.org/project/pyrhe/) is a unified and efficient Python framework for large-scale genomics heritability estimation. 
+
+### Computational Efficiency
+PyRHE integrates two core optimizations for computational efficiencies:
+1. **Parallel Processing**: Jackknife subsamples are tiled and distributed across multiple workers to parallelize genotype I/O and matrix computations.
+
+2. **Tensor Operations**: Large matrices are automatically converted to tensors using PyTorch, optimizing matrix multiplications for both CPU and CUDA-enabled GPU architectures.
+
+### Unified and Modular Framework
+PyRHE introduces a unified framework that integrates multiple heritability estimation models:
+- **Model Support**: The framework natively supports RHE, RHE-DOM, and GENIE models, with each model sharing common infrastructure while implementing model-specific components.
+
+- **Extensible Design**: The framework is designed with extensibility in mind, allowing easy integration of new models through well-defined abstract interfaces.
+
+- **Streaming Support**: Both standard and streaming versions of the base models are supported, and individual models can define their own streaming and non-streaming versions based on the interfaces.
 
 # Installation 
 
@@ -20,10 +34,11 @@ Alternatively, you may run PyRHE using a newline-separated config file:
 ```
 python run_rhe.py --config <config file>
 ```
-See the [example](https://github.com/sriramlab/PyRHE/tree/main/example) folder for an example usage.
+See the [example](https://github.com/sriramlab/PyRHE/tree/main/example) folder for the example usage for running the package for RHE, RHE_DOM, and GENIE.
 
 # Parameters
 ```
+model: The model to run (e.g., rhe, rhe_dom, genie).
 genotype (-g): The path of PLINK BED genotype file
 phenotype (-p): The path of phenotype file
 covariate (-c): The path of covariate file
@@ -45,9 +60,6 @@ pop_prev: Population prevalence of binary phenotype (for conversion to liability
 trace (-tr): Save the stochastic trace estimates as trace summary statistics (.trace) with metadata (.MN)
 trace_dir: Directory to save the trace estimates
 ```
-
-PyRHE is easily incorporated in your own project. Here is [an example notebook](https://github.com/sriramlab/PyRHE/blob/main/small_sample.ipynb) for how to do so.
-
 
 # Comparison between PyRHE & Original RHE
 ## Accuracy of Estimation
