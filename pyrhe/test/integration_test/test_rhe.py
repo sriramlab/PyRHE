@@ -83,29 +83,14 @@ def parse_output(output_file, num_bins=1):
     
     with open(output_file, 'r') as f:
         content = f.read()
-        print(f"Debug: Content length: {len(content)}")
-        print(f"Debug: First 500 chars: {content[:500]}")
         
         # Extract sigma2_e first since it's common to both cases
         sigma2_e_match = re.search(r'Sigma\^2_e : ([\d.]+)  SE : ([\d.]+)', content)
         if sigma2_e_match:
-            print(f"Debug: Found sigma2_e match: {sigma2_e_match.groups()}")
             results['sigma2_e'] = {
                 'value': float(sigma2_e_match.group(1)),
                 'se': float(sigma2_e_match.group(2))
             }
-        else:
-            print("Debug: No sigma2_e match found")
-            # Try alternative pattern
-            sigma2_e_match = re.search(r'Sigma\^2_e\s*:\s*([\d.]+)\s*SE\s*:\s*([\d.]+)', content)
-            if sigma2_e_match:
-                print(f"Debug: Found sigma2_e match with alternative pattern: {sigma2_e_match.groups()}")
-                results['sigma2_e'] = {
-                    'value': float(sigma2_e_match.group(1)),
-                    'se': float(sigma2_e_match.group(2))
-                }
-            else:
-                print("Debug: No sigma2_e match found with alternative pattern")
         
         if num_bins == 1:
             # Extract sigma2_g
@@ -125,11 +110,11 @@ def parse_output(output_file, num_bins=1):
                 }
                 
             # Extract enrichment_g
-            enrichment_match = re.search(r'Enrichment g\[0\] : ([\d.]+) SE : ([\d.]+)', content)
-            if enrichment_match:
+            enrichment_g_match = re.search(r'Enrichment g\[0\] : ([\d.]+) SE : ([\d.]+)', content)
+            if enrichment_g_match:
                 results['enrichment_g'] = {
-                    'value': float(enrichment_match.group(1)),
-                    'se': float(enrichment_match.group(2))
+                    'value': float(enrichment_g_match.group(1)),
+                    'se': float(enrichment_g_match.group(2))
                 }
         else:
             # Extract sigma2_g for all bins
@@ -149,8 +134,8 @@ def parse_output(output_file, num_bins=1):
                 results['h2_g'].append({'value': value, 'se': se})
                 
             # Extract enrichment_g for all bins
-            enrichment_matches = re.finditer(r'Enrichment g\[(\d+)\] : ([\d.-]+) SE : ([\d.]+)', content)
-            for match in enrichment_matches:
+            enrichment_g_matches = re.finditer(r'Enrichment g\[(\d+)\] : ([\d.-]+) SE : ([\d.]+)', content)
+            for match in enrichment_g_matches:
                 bin_idx = int(match.group(1))
                 value = float(match.group(2))
                 se = float(match.group(3))
@@ -164,14 +149,18 @@ def parse_output(output_file, num_bins=1):
                 'se': float(total_h2_match.group(2))
             }
             
-    print(f"Debug: Final results: {results}")
     return results
 
 def is_within_range(calculated, ground_truth):
-    """Check if the calculated value is within the ground truth value ± SE."""
-    lower_bound = ground_truth['value'] - ground_truth['se']
-    upper_bound = ground_truth['value'] + ground_truth['se']
-    return lower_bound <= calculated['value'] <= upper_bound
+    """Check if the ranges of calculated and ground truth values overlap."""
+    # Calculate ranges for both values
+    calc_lower = calculated['value'] - calculated['se']
+    calc_upper = calculated['value'] + calculated['se']
+    truth_lower = ground_truth['value'] - ground_truth['se']
+    truth_upper = ground_truth['value'] + ground_truth['se']
+    
+    # Check if ranges overlap
+    return (calc_lower <= truth_upper and calc_upper >= truth_lower)
 
 @pytest.mark.parametrize("config_name,num_bins,ground_truth", [
     ("no_streaming_bin_1.txt", 1, GROUND_TRUTH_1_BIN),

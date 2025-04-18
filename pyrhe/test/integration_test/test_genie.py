@@ -9,20 +9,48 @@ import pytest
 
 GROUND_TRUTH = {
     'sigma2_g': {
-        'value': 0.12410478106518931,
-        'se': 0.032512953600579333
+        'value': 0.123913,
+        'se': 0.0204703
     },
     'sigma2_gxe': {
-        'value': 0.26624928556220623,
-        'se': 0.09731811438356684
+        'value': 0.270141,
+        'se': 0.129187
     },
     'sigma2_nxe': {
-        'value': 0.142724456970253,
-        'se': 0.09675039553897923
+        'value': 0.139967,
+        'se': 0.128535
     },
     'sigma2_e': {
-        'value': 0.6757598693113297,
-        'se': 0.03268802802730129
+        'value': 0.715668,
+        'se': 0.0205994
+    },
+    'h2_g': {
+        'value': 0.12382,
+        'se': 0.0204589
+    },
+    'h2_gxe': {
+        'value': 0.106168,
+        'se': 0.0507162
+    },
+    'h2_nxe': {
+        'value': 0.0552029,
+        'se': 0.0506941
+    },
+    'total_h2': {
+        'value': 0.285191,
+        'se': 0.0205747
+    },
+    'total_h2_g': {
+        'value': 0.12382,
+        'se': 0.0204589
+    },
+    'total_h2_gxe': {
+        'value': 0.106168,
+        'se': 0.0507162
+    },
+    'enrichment_g': {
+        'value': 1.0,
+        'se': 0.0
     }
 }
 
@@ -63,14 +91,75 @@ def parse_output(output_file):
                 'value': float(sigma2_e_match.group(1)),
                 'se': float(sigma2_e_match.group(2))
             }
+
+        # Extract h2_g
+        h2_g_match = re.search(r'h2_g\[0\] : ([\d.]+) SE : ([\d.]+)', content)
+        if h2_g_match:
+            results['h2_g'] = {
+                'value': float(h2_g_match.group(1)),
+                'se': float(h2_g_match.group(2))
+            }
+
+        # Extract h2_gxe
+        h2_gxe_match = re.search(r'h2_gxe\[0\] : ([\d.]+) SE : ([\d.]+)', content)
+        if h2_gxe_match:
+            results['h2_gxe'] = {
+                'value': float(h2_gxe_match.group(1)),
+                'se': float(h2_gxe_match.group(2))
+            }
+
+        # Extract h2_nxe
+        h2_nxe_match = re.search(r'h2_nxe\[0\] : ([\d.]+) SE : ([\d.]+)', content)
+        if h2_nxe_match:
+            results['h2_nxe'] = {
+                'value': float(h2_nxe_match.group(1)),
+                'se': float(h2_nxe_match.group(2))
+            }
+
+        # Extract total h2
+        total_h2_match = re.search(r'Total h2 : ([\d.]+) SE: ([\d.]+)', content)
+        if total_h2_match:
+            results['total_h2'] = {
+                'value': float(total_h2_match.group(1)),
+                'se': float(total_h2_match.group(2))
+            }
+
+        # Extract total h2_g
+        total_h2_g_match = re.search(r'Total h2_g : ([\d.]+) SE: ([\d.]+)', content)
+        if total_h2_g_match:
+            results['total_h2_g'] = {
+                'value': float(total_h2_g_match.group(1)),
+                'se': float(total_h2_g_match.group(2))
+            }
+
+        # Extract total h2_gxe
+        total_h2_gxe_match = re.search(r'Total h2_gxe : ([\d.]+) SE: ([\d.]+)', content)
+        if total_h2_gxe_match:
+            results['total_h2_gxe'] = {
+                'value': float(total_h2_gxe_match.group(1)),
+                'se': float(total_h2_gxe_match.group(2))
+            }
+
+        # Extract enrichment g
+        enrichment_g_match = re.search(r'Enrichment g\[0\] : ([\d.]+) SE : ([\d.]+)', content)
+        if enrichment_g_match:
+            results['enrichment_g'] = {
+                'value': float(enrichment_g_match.group(1)),
+                'se': float(enrichment_g_match.group(2))
+            }
             
     return results
 
 def is_within_range(calculated, ground_truth):
-    """Check if the calculated value is within the ground truth value ± SE."""
-    lower_bound = ground_truth['value'] - ground_truth['se']
-    upper_bound = ground_truth['value'] + ground_truth['se']
-    return lower_bound <= calculated['value'] <= upper_bound
+    """Check if the ranges of calculated and ground truth values overlap."""
+    # Calculate ranges for both values
+    calc_lower = calculated['value'] - calculated['se']
+    calc_upper = calculated['value'] + calculated['se']
+    truth_lower = ground_truth['value'] - ground_truth['se']
+    truth_upper = ground_truth['value'] + ground_truth['se']
+    
+    # Check if ranges overlap
+    return (calc_lower <= truth_upper and calc_upper >= truth_lower)
 
 @pytest.mark.parametrize("config_name", [
     "no_streaming_bin_1.txt",

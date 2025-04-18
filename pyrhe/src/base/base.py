@@ -470,7 +470,7 @@ class Base(ABC):
                         self.XXz[k][self.num_jack][b] += self.XXz[k][j][b]
                     self.yXXy[k][self.num_jack] += self.yXXy[k][j]
             else: # hetero noise
-                e = self.num_estimates - k - self.num_bin - self.num_gen_env_bin + 1
+                e = k - self.num_bin - self.num_gen_env_bin
                 X_kj = elem_mul(np.eye(self.num_indv), self.env[:, e].reshape(-1, 1), device=self.device)
                 for b in range(self.num_random_vec):
                     self.XXz[k][self.num_jack][b] = self._compute_XXz(b, X_kj)

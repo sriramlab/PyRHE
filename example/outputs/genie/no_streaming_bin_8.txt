@@ -1,0 +1,59 @@
+##################################
+#                                #
+#          PyRHE (v1.0.0)        #
+#                                #
+##################################
+
+
+Active essential options:
+	-g (genotype) test
+	-annot (annotation) multi.annot
+	-p (phenotype) test.pheno
+	-c (covariates) test.cov
+	-o (output) outputs/genie/no_streaming_bin_8.txt
+	-k (# random vectors) 20
+	-jn (# jackknife blocks) 100
+	--num_workers 5
+	--device cpu
+	--geno_impute_method binary
+	--cov_impute_method ignore
+
+
+Number of traits: 1
+Rank of the covariate matrix: 5
+Number of individuals after filtering: 5000
+Number of covariates: 5
+*****
+Number of features in bin 0 : 1250
+Number of features in bin 1 : 1250
+Number of features in bin 2 : 1252
+Number of features in bin 3 : 1268
+Number of features in bin 4 : 1226
+Number of features in bin 5 : 1262
+Number of features in bin 6 : 1307
+Number of features in bin 7 : 1185
+Number of environments: 1
+GENIE model: G+GxE+NxE
+*****
+OUTPUT FOR TRAIT 0: 
+Saved trace summary into run_test.pheno(.tr/.MN)
+Variance components: 
+Sigma^2_g[0] : 0.011549142638932742  SE : 0.011358897533674377
+Sigma^2_g[1] : 0.012453483274434587  SE : 0.010432832899261849
+Sigma^2_g[2] : 0.015981721993486856  SE : 0.009498953377064356
+Sigma^2_g[3] : 0.013119838694825024  SE : 0.010257877143719427
+Sigma^2_g[4] : 0.013566136433763436  SE : 0.01062525398282056
+Sigma^2_g[5] : 0.030172579194469144  SE : 0.01349836904428428
+Sigma^2_g[6] : -0.006098212006501802  SE : 0.008887893578119114
+Sigma^2_g[7] : 0.033871194192704956  SE : 0.010983798801156361
+Sigma^2_gxe[0] : 0.12802503514856067  SE : 0.03912154464459853
+Sigma^2_gxe[1] : 0.011809900527664712  SE : 0.04022051976572683
+Sigma^2_gxe[2] : -0.028989016177104646  SE : 0.029271308713072593
+Sigma^2_gxe[3] : 0.017505650899051293  SE : 0.03258808716914275
+Sigma^2_gxe[4] : 0.06396560317155253  SE : 0.036030817328851536
+Sigma^2_gxe[5] : -0.008461951550468551  SE : 0.031165425648243636
+Sigma^2_gxe[6] : 0.03168147481795616  SE : 0.038586039137331975
+Sigma^2_gxe[7] : 0.050370109942813414  SE : 0.03325792284419565
+Sigma^2_nxe[0] : 0.1436016734516529  SE : 0.09651059622544927
+Sigma^2_e : 0.675272169398238  SE : 0.03296973767308027
+Runtime:  25.447372674942017
