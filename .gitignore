@@ -25,6 +25,10 @@ generated_annot
 .env
 test_small_sample.py
 
+# Documentation
+docs/_build/
+docs/pyrhe-docs/
+docs/docs/
 
 !example/**/*
 example/*.MN

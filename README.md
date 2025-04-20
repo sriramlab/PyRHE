@@ -1,5 +1,13 @@
 # PyRHE
 
+[![Documentation Status](https://readthedocs.org/projects/pyrhe/badge/?version=latest)](https://pyrhe.readthedocs.io/en/latest/?badge=latest)
+
+PyRHE is a unified and efficient Python framework for large-scale genomics heritability estimation.
+
+## Documentation
+
+The full documentation is available at [pyrhe.readthedocs.io](https://pyrhe.readthedocs.io/).
+
 [PyRHE](https://pypi.org/project/pyrhe/) is an efficient and portable Python package for RHE-mc (Randomized Haseman–Elston regression for Multi-variance Components). It converts large matrix into tensors to accelerate large matrix multiplication and incorporates multiprocessing to process Jackknife blocks in parallel. It is designed to run on both CPU and CUDA-enabled GPU, and is easy to install and integrate into other applications.
 
 # Installation 
