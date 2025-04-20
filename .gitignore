@@ -29,6 +29,7 @@ test_small_sample.py
 docs/_build/
 docs/pyrhe-docs/
 docs/docs/
+!docs/requirements.txt
 
 !example/**/*
 example/*.MN
