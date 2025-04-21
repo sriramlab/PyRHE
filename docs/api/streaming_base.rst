@@ -17,12 +17,65 @@ Thus, in the ``StreamingBase`` class, we use a two-pass approach. Specifically:
    - Subtracts block contributions for leave-one-out estimates
    - Calculates final estimates and standard errors
 
+Shared Memory Arrays
+--------------------
+
+Since the shared memory arrays are of different sizes than the base class, we need to redefine their sizes.
+
+- ``self.M``: Size: (num_jack + 1, num_estimates).
+
+    It contains the number of SNPs in each jackknife subsample in each bin. The last row is the total number of SNPs in each bin (Same as the base class).
+
+To support multiple workers without race condition, we first store each worker's results in a separate array and then aggregate the results.
+
+The initial size of the shared memory arrays are:
+
+- ``self.XXz``: Size: (num_estimates, num_workers, num_random_vec, num_indv).
+
+    The second dimension is the number of workers instead of num_jack + 1
+
+    It contains the ``XXz`` value for the jackknife subsamples within each worker.
+
+- ``self.yXXy``: Size: (num_estimates, num_workers).
+
+    It contains the ``yXXy`` value for the jackknife subsamples within each worker.
+
+If the covariate file is provided, the UXXz and XXUz will be calculated:
+
+- ``self.UXXz``: Size: (num_estimates, num_workers, num_random_vec, num_indv).
+
+    It contains the ``UXXz`` value for the jackknife subsamples within each worker.
+
+- ``self.XXUz``: Size: (num_estimates, num_workers, num_random_vec, num_indv).
+
+    It contains the ``XXUz`` value for the jackknife subsamples within each worker.
+
+Then, we aggregate the results across the workers and first temporarily store the aggregated results in the tensors ``XXz_per_jack``, ``yXXy_per_jack``, ``UXXz_per_jack``, and ``XXUz_per_jack``.
+
+- ``self.XXz_per_jack``: Size: (num_estimates, 2, num_random_vec, num_indv).
+
+- ``self.yXXy_per_jack``: Size: (num_estimates, 2).
+
+- ``self.UXXz_per_jack``: Size: (num_estimates, 2, num_random_vec, num_indv).
+
+- ``self.XXUz_per_jack``: Size: (num_estimates, 2, num_random_vec, num_indv).
+
+Note that the second dimension is 2 because it only stores the total statistics and one leave-one-out statistics at a time. 
+
+Then, we reassign those tensors to the original shared memory arrays ``self.XXz``, ``self.yXXy``, ``self.UXXz``, and ``self.XXUz``, and delete the temporary tensors.
+
+Thus, the final size of the shared memory arrays are:
+
+- ``self.XXz``: Size: (num_estimates, 2, num_random_vec, num_indv).
+
+- ``self.yXXy``: Size: (num_estimates, 2).
+
+- ``self.UXXz``: Size: (num_estimates, 2, num_random_vec, num_indv).
+
+- ``self.XXUz``: Size: (num_estimates, 2, num_random_vec, num_indv).
+
 Key Methods
 ---------
-
-.. py:method:: shared_memory():
-
-   Since the shared memory arrays are of different sizes than the base class, we need to redefine their sizes in this method.
 
 .. py:method:: aggregate()
 

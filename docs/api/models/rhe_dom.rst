@@ -5,7 +5,7 @@ The ``RHE_DOM`` class extends the ``Base`` class to implement Randomized Haseman
 It provides joint estimation of additive and dominant genetic variance components
 
 Variance Components
-~~~~~~~~~~~~~~~~~~~
+-------------------
 The RHE-DOM model estimates:
 
 - Additive genetic variance components (σ²g) for each bin

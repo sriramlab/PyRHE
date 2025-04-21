@@ -4,7 +4,7 @@ Streaming GENIE Model
 The ``StreamingGENIE`` class extends both ``GENIE`` and ``StreamingBase`` to provide memory-efficient processing of gene-environment interaction analysis for large-scale genomic data.
 
 Model Types
-~~~~~~~~~~~
+-----------
 
 Similar to the `GENIE` model, the ``StreamingGENIE`` model supports three streaming configurations:
 

@@ -4,7 +4,8 @@ RHE Model
 The ``RHE`` class implements the Randomized Haseman-Elston regression model for heritability estimation. It inherits from the ``Base`` class and provides efficient estimation of additive genetic variance components.
 
 Variance Components
-~~~~~~~~~~~~~~~~~~~
+-------------------
+
 The RHE model estimates:
 
 - Additive genetic variance components (σ²g) for each bin

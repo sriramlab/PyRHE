@@ -228,8 +228,7 @@ Example Output
     Enrichment g[0] : 0.9999999999998098 SE : 1.2257069904382272e-12
     Runtime:  3.243225574493408
 
-
-Please refer to the `example`_ folder for a list of configuration files and their corresponding output files.
+Please refer to the `example <https://github.com/sriramlab/PyRHE/tree/main/example>`__ folder for a list of configuration files and their corresponding output files.
 
 Example Using the Class
 ----------------------

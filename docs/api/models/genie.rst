@@ -3,11 +3,9 @@ GENIE Model
 
 The ``GENIE`` class implements the Gene-ENvironment Interaction Estimator. It extends the ``Base`` class to estimate gene-environment interaction effects in genomic data.
 
-Core Components
---------------
 
 Model Types
-~~~~~~~~~~~
+-----------
 
 The GENIE model supports three types of analysis:
 
@@ -16,7 +14,7 @@ The GENIE model supports three types of analysis:
 - ``G+GxE+NxE``: Full model with noise-environment interactions
 
 Variance Components
-~~~~~~~~~~~~~~~~~~~
+-------------------
 
 The model estimates multiple variance components:
 
@@ -40,21 +38,29 @@ To initialize the GENIE model, you should also specify the environment file and 
 You must set the  ``self.num_env`` and ``self.env`` member variables, which should be read from the environment file.
 You must set the ``self.num_gen_env_bin`` as ``self.num_bin * self.num_env``.
 
+.. py:method:: __init__(env_file: str, genie_model: str, **kwargs)
 
-.. code-block:: python
-def __init__(
-        self,
-        env_file: str,
-        genie_model: str,
-        **kwargs
-    ):
-         
-        super().__init__(**kwargs) 
+   Initializes the GENIE model with environment and model type specifications.
 
-        self.num_env, self.env = read_env_file(env_file)
-        self.env = self.env[:, np.newaxis]
-        self.num_gen_env_bin = self.num_bin * self.num_env
-        self.genie_model = genie_model
+   :param str env_file: Path to the environment file containing environment variables
+   :param str genie_model: Type of GENIE model to use ("G", "G+GxE", or "G+GxE+NxE")
+   :param **kwargs: Additional arguments passed to the parent Base class
+
+   .. code-block:: python
+
+      def __init__(
+              self,
+              env_file: str,
+              genie_model: str,
+              **kwargs
+          ):
+              
+              super().__init__(**kwargs) 
+
+              self.num_env, self.env = read_env_file(env_file)
+              self.env = self.env[:, np.newaxis]
+              self.num_gen_env_bin = self.num_bin * self.num_env
+              self.genie_model = genie_model
 
 Key Methods
 ----------

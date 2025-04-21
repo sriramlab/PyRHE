@@ -5,7 +5,7 @@ The ``Base`` class serves as the foundation for all models in PyRHE, providing c
 
 The core components of the RHE-based algorithms are comprised of two main components: 
 
-1. Precomputation. This part uses jackknife subsampling to calculate the statistics like XXz and yXXy for each jackknife blocks. 
+1. Precomputation. This part uses jackknife subsampling to calculate the statistics like ``XXz`` and ``yXXy`` for each jackknife blocks. 
 
 2. Estimation. This part uses the previously calculated statistics to construct and solve normal equations for methods-of-moments estimation.
 
@@ -64,13 +64,56 @@ To construct the estimation part, the Base class provides the following function
 - Computation of heritability and enrichment along with their standard errors
 - Liability-scale corrections
 
-Key Member Variables in the Base Class:
+Key Member Variables in the Base Class
 -------------------------------------
 
 - ``self.M``: Matrix representing the number of SNPs in each jackknife subsample in each bin. The last row is the total number of SNPs in each bin.
 - ``self.len_bin``: Total number of SNPs in each bin. This should be specified by the model-specific classes in the ``get_M_last_row()`` method.
 - ``self.XXz / self.yXXy / self.UXXz / self.XXUz``: Jackknife statistics. If the covariate is provided, the UXXz and XXUz will be calculated.
 - ``self.num_estimates``: Number of estimates. This should be specified by the model-specific classes in the ``get_num_estimates()`` method.
+
+Shared Memory Arrays
+--------------------
+
+The Base class provides the following shared memory arrays:
+
+- ``self.M``: Size: (num_jack + 1, num_estimates).
+
+    It contains the number of SNPs in each jackknife subsample in each bin. The last row is the total number of SNPs in each bin.
+
+- ``self.XXz``: Size: (num_estimates, num_jack + 1, num_random_vec, num_indv).
+
+    It contains the XXz value for each jackknife subsample in each bin within each random vector.
+
+    ``self.XXz[:][j][:]`` stores the leave-one-out XXz value for the jth jackknife subsample
+
+    ``self.XXz[:][-1][:]``, stores the overall XXz value.
+
+- ``self.yXXy``: Size: (num_estimates, num_jack + 1).
+
+    It contains the yXXy value for each jackknife subsample in each bin.
+
+    ``self.yXXy[:][j]`` stores the leave-one-out yXXy value for the jth jackknife subsample
+
+    ``self.yXXy[:][-1]``, stores the overall yXXy value.
+
+If the covariate file is provided, the UXXz and XXUz will be calculated:
+
+- ``self.UXXz``: Size: (num_estimates, num_jack + 1, num_random_vec, num_indv).
+
+    It contains the UXXz value for each jackknife subsample in each bin within each random vector.
+
+    ``self.UXXz[:][j][:]`` stores the leave-one-out UXXz value for the jth jackknife subsample
+
+    ``self.UXXz[:][-1][:]``, stores the overall UXXz value.
+
+- ``self.XXUz``: Size: (num_estimates, num_jack + 1, num_random_vec, num_indv).
+
+    It contains the XXUz value for each jackknife subsample in each bin within each random vector.
+    
+    ``self.XXUz[:][j][:]`` stores the leave-one-out XXUz value for the jth jackknife subsample
+
+    ``self.XXUz[:][-1][:]``, stores the overall XXUz value.
 
 Class Interface
 -------------

@@ -2,27 +2,9 @@
 
 [![Documentation Status](https://readthedocs.org/projects/pyrhe/badge/?version=latest)](https://pyrhe.readthedocs.io/en/latest/?badge=latest)
 
-PyRHE is a unified and efficient Python framework for large-scale genomics heritability estimation.
-
-## Documentation
+PyRHE is a unified and efficient Python framework for genomics heritability estimation. It provides a modular and extensible platform for implementing various genetic architecture estimation models and computation optimizations for large-scale genomic data.
 
 The full documentation is available at [pyrhe.readthedocs.io](https://pyrhe.readthedocs.io/).
-
-## Key Features:
-
-### Computational Efficiency
-PyRHE integrates two core optimizations for computational efficiencies:
-1. **Parallel Processing**: Jackknife subsamples are tiled and distributed across multiple workers to parallelize genotype I/O and matrix computations.
-
-2. **Tensor Operations**: Large matrices are automatically converted to tensors using PyTorch, optimizing matrix multiplications for both CPU and CUDA-enabled GPU architectures.
-
-### Unified and Modular Framework
-PyRHE introduces a unified framework that integrates multiple heritability estimation models:
-- **Model Support**: The framework natively supports RHE, RHE-DOM, and GENIE models, with each model sharing common infrastructure while implementing model-specific components.
-
-- **Extensible Design**: The framework is designed with extensibility in mind, allowing easy integration of new models through well-defined abstract interfaces.
-
-- **Streaming Support**: Both standard and streaming versions of the base models are supported, and individual models can define their own streaming and non-streaming versions based on the interfaces.
 
 # Installation 
 
@@ -30,7 +12,6 @@ PyRHE introduces a unified framework that integrates multiple heritability estim
 pip install pyrhe
 # Also install proper version of PyTorch from https://pytorch.org/ 
 ```
-
 
 # Example Usage
 
@@ -42,7 +23,6 @@ Alternatively, you may run PyRHE using a newline-separated config file:
 ```
 python run_rhe.py --config <config file>
 ```
-See the [example](https://github.com/sriramlab/PyRHE/tree/main/example) folder for the example usage for running the package for RHE, RHE_DOM, and GENIE.
 
 # Parameters
 ```
@@ -69,45 +49,4 @@ trace (-tr): Save the stochastic trace estimates as trace summary statistics (.t
 trace_dir: Directory to save the trace estimates
 ```
 
-# Comparison between PyRHE & Original RHE
-## Accuracy of Estimation
-<img width="1141" alt="image" src="https://github.com/jiayini1119/PyRHE/assets/105399924/030dd9f0-c359-409c-934f-8d6114709582">
-
-<img width="1141" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/71b5cff8-2fdf-42ae-bf29-50e8b93e75f4">
-
-## Runtime Comparision
-<img width="862" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/a629685e-7d56-4b24-a41c-95a0d7c477a5">
-
-<img width="498" alt="image" src="https://github.com/jiayini1119/RHE_project/assets/105399924/e3375751-fe0a-4c24-9bf8-84dff9d91634">
-
-# Example testing pipeline:
-Here is the example testing pipeline. You can run testing pipelines when some files are missing (e.g., annotation file). 
-
-**1. Set Up**
-Create a `.env` file and specify the `RESULT_DIR` (where you store the results) and `DATA_DIR` (store the simulated phenotype, generated annotation file, etc.)
-
-**2. Generate Annotation File:**  
-```
-cd core
-python generate_annot.py -g {geno_path} -b {num_bin} -o {output_file}
-```
-**3. Simulate Phenotype:**  
-
-Use the [Simulator](https://github.com/sriramlab/Simulator) to simulate phenotype without covariate.
-If want to add covariate, do 
-```
-cd core
-python simulate_pheno.py -b {num_bin} -c {cov_file_path}
-```
-
-**4. Run original RHE**  
-Running the [original RHE](https://github.com/sriramlab/RHE-mc) using
-```
-python run_original.py -g {geno_path} -b {num_bin} -c {cov_file_path} -k {num_vec} -jn {num_block} --output {output_file}
-```
-Then parse the outputs using `parse_output.py`
-
-**5. Run PyRHE**
-```
-python run_rhe.py -g {geno_path} -b {num_bin} -k {num_vec} -c {cov_file_path} -jn {num_block} --output {output_file}
-```
+Please refer to the [example](https://github.com/sriramlab/PyRHE/tree/main/example) for a list of configuration files for running RHE, RHE_DOM, and GENIE, and their respective outputs.
